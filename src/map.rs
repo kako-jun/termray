@@ -98,6 +98,13 @@ impl TileMap for GridMap {
 /// application can mix and match: the same type may implement both, or you
 /// may pair a `GridMap` with a custom `HeightMap` to keep solidity and
 /// surface heights in different data structures.
+///
+/// # Invariants
+///
+/// Implementations should guarantee `ceiling_height(x, y) >= floor_height(x, y)`
+/// for every coordinate. Violations don't panic — the renderer silently
+/// skips columns where the projected wall inverts — but the resulting
+/// picture is undefined.
 pub trait HeightMap {
     /// World-space height of the floor surface at tile `(x, y)`.
     /// Default: `0.0`.
