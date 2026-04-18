@@ -117,18 +117,83 @@ fn font8x8_draws_at_least_one_pixel_for_ascii_upper_a() {
     assert!(count > 0, "Font8x8 should draw at least one pixel for 'A'");
 }
 
+fn count_non_default_pixels(fb: &Framebuffer, w: usize, h: usize) -> usize {
+    let mut c = 0usize;
+    for y in 0..h {
+        for x in 0..w {
+            if fb.get_pixel(x, y) != Color::default() {
+                c += 1;
+            }
+        }
+    }
+    c
+}
+
 #[test]
 fn font8x8_ignores_chars_outside_basic_latin() {
     let mut fb = Framebuffer::new(16, 16);
     let white = Color::rgb(255, 255, 255);
     // U+00A0 (nbsp) is outside basic_latin range 0x20..=0x7E.
     Font8x8.draw_glyph(&mut fb, 0, 0, '\u{00A0}', white);
-    // Outside the range -> nothing drawn.
-    for y in 0..16 {
-        for x in 0..16 {
-            assert_eq!(fb.get_pixel(x, y), Color::default());
-        }
-    }
+    assert_eq!(
+        count_non_default_pixels(&fb, 16, 16),
+        0,
+        "nbsp is outside basic_latin — no pixels should be drawn"
+    );
+}
+
+#[test]
+fn font8x8_space_is_blank_but_in_range() {
+    // U+0020 (space) is the lower bound of basic_latin. Its bitmap is all
+    // zeros so nothing is drawn, but the character should be accepted (not
+    // short-circuited as "out of range").
+    let mut fb = Framebuffer::new(16, 16);
+    let white = Color::rgb(255, 255, 255);
+    Font8x8.draw_glyph(&mut fb, 0, 0, ' ', white);
+    assert_eq!(
+        count_non_default_pixels(&fb, 16, 16),
+        0,
+        "space has an all-zero bitmap so no pixels change"
+    );
+}
+
+#[test]
+fn font8x8_tilde_draws_at_least_one_pixel() {
+    // U+007E (tilde) is the upper bound of basic_latin. Must render at least
+    // one pixel — confirms the inclusive upper bound check.
+    let mut fb = Framebuffer::new(16, 16);
+    let white = Color::rgb(255, 255, 255);
+    Font8x8.draw_glyph(&mut fb, 0, 0, '~', white);
+    assert!(
+        count_non_default_pixels(&fb, 16, 16) > 0,
+        "'~' sits at the upper bound of basic_latin and should draw pixels"
+    );
+}
+
+#[test]
+fn font8x8_unit_separator_below_range_draws_nothing() {
+    // U+001F (unit separator) is one below the lower bound 0x20.
+    let mut fb = Framebuffer::new(16, 16);
+    let white = Color::rgb(255, 255, 255);
+    Font8x8.draw_glyph(&mut fb, 0, 0, '\u{001F}', white);
+    assert_eq!(
+        count_non_default_pixels(&fb, 16, 16),
+        0,
+        "U+001F is below basic_latin and must draw nothing"
+    );
+}
+
+#[test]
+fn font8x8_del_above_range_draws_nothing() {
+    // U+007F (DEL) is one above the upper bound 0x7E.
+    let mut fb = Framebuffer::new(16, 16);
+    let white = Color::rgb(255, 255, 255);
+    Font8x8.draw_glyph(&mut fb, 0, 0, '\u{007F}', white);
+    assert_eq!(
+        count_non_default_pixels(&fb, 16, 16),
+        0,
+        "DEL is above basic_latin and must draw nothing"
+    );
 }
 
 #[test]
