@@ -9,7 +9,8 @@
 
 use termray::{
     cast_ray, render_walls, render_walls_with_heights, Camera, Color, FlatHeightMap, Framebuffer,
-    GridMap, HitSide, RayHit, TileMap, TileType, Vec2f, WallTexturer, TILE_EMPTY, TILE_WALL,
+    GridMap, HitSide, RayHit, TileMap, TileType, Vec2f, WallTexturer, TILE_EMPTY, TILE_VOID,
+    TILE_WALL,
 };
 
 struct Solid;
@@ -17,15 +18,18 @@ struct Solid;
 impl WallTexturer for Solid {
     fn sample_wall(
         &self,
-        _tile: TileType,
+        tile: TileType,
         wall_x: f64,
         wall_y: f64,
         side: HitSide,
         brightness: f64,
         tile_hash: u32,
     ) -> Color {
-        // Use every input so a regression in any of them would show up.
-        let r = ((wall_x * 255.0) as u8).wrapping_add((tile_hash & 0xff) as u8);
+        // Use every input, including the tile id, so a regression in any
+        // of them would show up as a pixel diff.
+        let r = ((wall_x * 255.0) as u8)
+            .wrapping_add((tile_hash & 0xff) as u8)
+            .wrapping_add(tile);
         let g = (wall_y * 255.0) as u8;
         let b = match side {
             HitSide::Vertical => 200,
@@ -134,4 +138,62 @@ fn larger_scene_flat_heights_match_legacy() {
     let cam = Camera::new(5.0, 5.0, -0.4, 70f64.to_radians());
     let (fb_old, fb_new) = render_both(&map, &cam, 80, 48);
     assert_framebuffers_equal(&fb_old, &fb_new, "scattered 10x10");
+}
+
+#[test]
+fn close_wall_flat_heights_match_legacy() {
+    // Player pressed right up against a wall — legacy clamps the projected
+    // wall to the framebuffer and stretches the texture over the visible
+    // strip. The new renderer must do the same, otherwise nobiscuit sees
+    // texture coordinates shift whenever the player walks face-first into
+    // a wall.
+    let mut map = GridMap::new(6, 6);
+    for x in 1..5 {
+        for y in 1..5 {
+            map.set(x, y, TILE_EMPTY);
+        }
+    }
+    // Stand 0.25 tiles away from the east wall at row 2 — distance will
+    // project the wall to well over the framebuffer height.
+    let cam = Camera::new(3.75, 2.5, 0.0, 70f64.to_radians());
+    let (fb_old, fb_new) = render_both(&map, &cam, 80, 30);
+    assert_framebuffers_equal(&fb_old, &fb_new, "close wall 0.25 tile away");
+}
+
+#[test]
+fn user_defined_tile_flat_heights_match_legacy() {
+    // Tile ids 3..=255 are user-defined. Both renderers must pass the
+    // same tile id through to the texturer.
+    let mut map = GridMap::new(6, 6);
+    for x in 1..5 {
+        for y in 1..5 {
+            map.set(x, y, TILE_EMPTY);
+        }
+    }
+    map.set(3, 3, 42);
+    map.set(4, 2, 7);
+
+    let cam = Camera::new(2.0, 2.0, 0.5, 70f64.to_radians());
+    let (fb_old, fb_new) = render_both(&map, &cam, 80, 40);
+    assert_framebuffers_equal(&fb_old, &fb_new, "user-defined tile ids");
+}
+
+#[test]
+fn void_columns_are_skipped_by_both() {
+    // TILE_VOID is the "map-edge" tile: rays hit it but neither renderer
+    // should draw a wall column for it. The background Color::default()
+    // must be preserved in those columns by both passes.
+    let mut map = GridMap::new(6, 6);
+    for x in 1..5 {
+        for y in 1..5 {
+            map.set(x, y, TILE_EMPTY);
+        }
+    }
+    // Replace one edge segment with VOID so some rays hit it directly.
+    map.set(5, 2, TILE_VOID);
+    map.set(5, 3, TILE_VOID);
+
+    let cam = Camera::new(2.0, 2.5, 0.0, 70f64.to_radians());
+    let (fb_old, fb_new) = render_both(&map, &cam, 80, 40);
+    assert_framebuffers_equal(&fb_old, &fb_new, "void columns on edge");
 }
