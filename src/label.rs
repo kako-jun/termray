@@ -92,7 +92,9 @@ pub struct ProjectedLabel {
     pub lines: Vec<String>,
     pub color: Color,
     pub background: Option<Color>,
-    /// World height used for vertical projection — preserved so renderer can re-project.
+    /// World height used for vertical projection. Preserved from the source
+    /// [`Label`] because [`render_labels`] re-projects each label's vertical
+    /// position at paint time (see the caveat on [`project_labels`]).
     pub world_height: f64,
 }
 
@@ -170,6 +172,13 @@ fn hard_split(word: &str, max: usize) -> Vec<String> {
 ///
 /// Results are sorted far-to-near so caller rendering follows the painter's
 /// algorithm — matches [`crate::sprite::project_sprites`].
+///
+/// # Caveat
+///
+/// The `screen_width` passed here must match the width of the framebuffer
+/// later passed to [`render_labels`]: the renderer re-projects each label's
+/// vertical position and assumes the same horizontal FOV scaling. Passing
+/// mismatched widths will produce vertically misaligned text.
 pub fn project_labels(
     labels: &[Label],
     camera_x: f64,
@@ -229,12 +238,23 @@ pub fn project_labels(
     results
 }
 
-/// Render projected labels into the framebuffer with per-column depth test.
+/// Render projected labels into the framebuffer.
 ///
 /// - Glyphs are drawn at the font's native pixel size (no distance scaling)
 ///   so labels remain readable at all depths.
 /// - Labels whose distance exceeds `max_depth` are skipped.
-/// - Per-column depth test against `rays` hides labels behind walls.
+/// - Occlusion has two granularities: glyphs use glyph-level occlusion
+///   (skipped wholesale if any of their columns are hidden by a wall), while
+///   optional background boxes are blended per-column. This gives visually
+///   clean glyph edges at wall corners without the background rectangle
+///   leaking past them.
+///
+/// # Caveat
+///
+/// `fb.width()` must match the `screen_width` that was passed to
+/// [`project_labels`] for `projected` — the renderer re-projects each label's
+/// vertical position and assumes the same horizontal FOV scaling. Passing a
+/// mismatched framebuffer will produce vertically misaligned text.
 pub fn render_labels(
     fb: &mut Framebuffer,
     projected: &[ProjectedLabel],

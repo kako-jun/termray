@@ -194,8 +194,10 @@ render_labels(&mut fb, &projected, &rays, &Font8x8, 16.0);
 
 Glyphs render at the font's native pixel size (no distance scaling), so
 labels stay readable near and far — the right trade-off when the label
-content, not the sprite, is what the user actually reads. The per-column
-depth test against `rays` makes labels correctly disappear behind walls.
+content, not the sprite, is what the user actually reads. Occlusion uses
+two granularities: glyphs are hidden wholesale if any of their columns are
+behind a wall (keeping glyph edges clean at corners), while the optional
+background rectangle is blended per-column.
 
 The bundled [`Font8x8`] covers `basic_latin` (0x20..=0x7E). For non-Latin
 content (Japanese filenames for friendly-filer, CJK labels in general), ship

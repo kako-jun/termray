@@ -9,7 +9,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `Label`, `ProjectedLabel`, `GlyphRenderer` trait, `Font8x8` default impl,
   `project_labels`, `render_labels` — world-anchored text labels with
-  per-column depth test and word-wrap (#5).
+  word-wrap and two-tier occlusion: glyph-level for text (skipped wholesale
+  if any of its columns is behind a wall) and per-column for the optional
+  background rectangle (#5).
 - `examples/labeled_sprites` — friendly-filer-style demo of sprites with
   file-name labels that are occluded by walls.
 
