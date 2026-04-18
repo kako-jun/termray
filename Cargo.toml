@@ -1,0 +1,27 @@
+[package]
+name = "termray"
+version = "0.1.0"
+edition = "2021"
+authors = ["kako-jun"]
+license = "MIT"
+description = "Generic TUI raycasting engine — grid maps, DDA walls, floors/ceilings, sprites"
+homepage = "https://github.com/kako-jun/termray"
+repository = "https://github.com/kako-jun/termray"
+readme = "README.md"
+keywords = ["raycasting", "tui", "terminal", "3d", "engine"]
+categories = ["rendering::engine", "game-development"]
+exclude = [".github/", "target/"]
+rust-version = "1.82.0"
+
+[dependencies]
+
+[dev-dependencies]
+crossterm = "0.28"
+
+[[example]]
+name = "maze"
+path = "examples/maze.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
