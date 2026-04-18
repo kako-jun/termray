@@ -13,9 +13,10 @@ Pre-release. `v0.1.0` targets feature parity with the internal raycaster that
 powered [nobiscuit](https://github.com/kako-jun/nobiscuit) v0.1.0, minus the
 application-specific styling. Arbitrary-angle cameras (#4) and stepped
 heightmaps (#3 Phase 1) landed in `v0.2.0` — wall tops/bottoms follow a
-per-tile `HeightMap` and the camera carries an eye-height `z`. Corner-
-interpolated true slopes (with `Camera.pitch` and non-flat floor projection)
-are tracked in #8 for `v0.3.0`. Sprite text labels (#5) come after.
+per-tile `HeightMap` and the camera carries an eye-height `z`. World-anchored
+text labels on sprites (#5) are now implemented on `main` and will ship with
+`v0.3.0` (unreleased) alongside corner-interpolated true slopes (`Camera.pitch`
+and non-flat floor projection, tracked in #8).
 
 ## Reserved tile IDs
 
@@ -70,6 +71,7 @@ different elevation:
 cargo run --example maze
 cargo run --example free_camera
 cargo run --example terrain
+cargo run --example labeled_sprites
 ```
 
 ## Free-angle camera (physics integration)
@@ -161,6 +163,49 @@ corner-interpolated slopes, `Camera.pitch`, and ray-floor intersection are
 tracked separately in [#8](https://github.com/kako-jun/termray/issues/8)
 for `v0.3.0` (the release street-golf will depend on for SRTM terrain).
 
+## Sprite text labels
+
+A [`Label`](src/label.rs) is a world-anchored text entity independent of
+[`Sprite`](src/sprite.rs). Place both at the same `(x, y)` to compose an
+"icon with caption" — the primary use case is friendly-filer, where the
+file name is the real content and the icon is just a visual anchor.
+
+```rust
+use termray::{Color, Font8x8, Label, project_labels, render_labels};
+# use termray::{Framebuffer, RayHit};
+# let mut fb = Framebuffer::new(80, 40);
+# let rays: Vec<Option<RayHit>> = vec![None; 80];
+# let cam_x = 0.0; let cam_y = 0.0; let cam_angle = 0.0;
+# let fov = 70f64.to_radians();
+
+let labels = vec![Label {
+    text: "README.md".into(),
+    x: 5.0,
+    y: 3.0,
+    world_height: 0.85,                // roughly head-height above the floor
+    color: Color::rgb(240, 240, 240),
+    background: Some(Color::rgb(20, 20, 25)),
+    max_chars: Some(12),               // greedy word-wrap on whitespace
+}];
+
+let projected = project_labels(&labels, cam_x, cam_y, cam_angle, fov, fb.width());
+render_labels(&mut fb, &projected, &rays, &Font8x8, 16.0);
+```
+
+Glyphs render at the font's native pixel size (no distance scaling), so
+labels stay readable near and far — the right trade-off when the label
+content, not the sprite, is what the user actually reads. The per-column
+depth test against `rays` makes labels correctly disappear behind walls.
+
+The bundled [`Font8x8`] covers `basic_latin` (0x20..=0x7E). For non-Latin
+content (Japanese filenames for friendly-filer, CJK labels in general), ship
+your own [`GlyphRenderer`] implementation — any bitmap font works, termray
+doesn't care about the source.
+
+See `examples/labeled_sprites.rs` for a friendly-filer–style demo where file
+icons carry captions that occlude correctly when the camera moves behind the
+interior wall.
+
 ## API surface
 
 | Module | Public items |
@@ -173,6 +218,7 @@ for `v0.3.0` (the release street-golf will depend on for SRTM terrain).
 | `renderer` | `WallTexturer`, `render_walls`, `render_walls_with_heights`, `tile_hash`, `WALL_HEIGHT_SCALE` |
 | `floor` | `FloorTexturer`, `render_floor_ceiling` |
 | `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult`, `project_sprites`, `render_sprites` |
+| `label` | `Label`, `ProjectedLabel`, `GlyphRenderer`, `Font8x8`, `project_labels`, `render_labels` |
 
 ## Relationship to nobiscuit-engine
 
