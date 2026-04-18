@@ -30,7 +30,7 @@ pub use map::{
 };
 pub use math::{normalize_angle, Vec2f};
 pub use ray::{cast_ray, HitSide, RayHit};
-pub use renderer::{render_walls, WallTexturer};
+pub use renderer::{render_walls, render_walls_with_heights, WallTexturer};
 pub use sprite::{
     project_sprites, render_sprites, Sprite, SpriteArt, SpriteDef, SpriteRenderResult,
 };
