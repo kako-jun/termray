@@ -31,6 +31,10 @@ path = "examples/free_camera.rs"
 name = "terrain"
 path = "examples/terrain.rs"
 
+[[example]]
+name = "labeled_sprites"
+path = "examples/labeled_sprites.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1
