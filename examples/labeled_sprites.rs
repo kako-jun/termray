@@ -11,24 +11,24 @@
 //! - `a` / `d` — turn left / right
 //! - `q`       — quit
 
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::Duration;
 
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::event::{poll, read, Event, KeyCode};
+use crossterm::event::{Event, KeyCode, poll, read};
 use crossterm::execute;
 use crossterm::style::{
     Color as CtColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
 };
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+    enable_raw_mode, size,
 };
 
 use termray::{
-    project_labels, project_sprites, render_floor_ceiling, render_labels, render_sprites,
-    render_walls, Camera, Color, FloorTexturer, Font8x8, Framebuffer, GridMap, HitSide, Label,
-    Sprite, SpriteArt, SpriteDef, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
+    Camera, Color, FloorTexturer, Font8x8, Framebuffer, GridMap, HitSide, Label, Sprite, SpriteArt,
+    SpriteDef, TILE_EMPTY, TILE_WALL, TileType, WallTexturer, project_labels, project_sprites,
+    render_floor_ceiling, render_labels, render_sprites, render_walls,
 };
 
 // ---------- world / textures ----------

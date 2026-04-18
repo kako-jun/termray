@@ -1,6 +1,6 @@
 use crate::camera::Camera;
 use crate::framebuffer::{Color, Framebuffer};
-use crate::map::{HeightMap, TileType, TILE_VOID};
+use crate::map::{HeightMap, TILE_VOID, TileType};
 use crate::ray::{HitSide, RayHit};
 
 /// Pluggable wall texture source.

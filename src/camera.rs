@@ -1,6 +1,6 @@
 use crate::map::TileMap;
 use crate::math::Vec2f;
-use crate::ray::{cast_ray, RayHit};
+use crate::ray::{RayHit, cast_ray};
 
 pub struct Camera {
     pub x: f64,

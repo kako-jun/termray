@@ -8,9 +8,9 @@
 //! raycaster on two representative maps and assert pixel-for-pixel equality.
 
 use termray::{
-    cast_ray, render_walls, render_walls_with_heights, Camera, Color, FlatHeightMap, Framebuffer,
-    GridMap, HitSide, RayHit, TileMap, TileType, Vec2f, WallTexturer, TILE_EMPTY, TILE_VOID,
-    TILE_WALL,
+    Camera, Color, FlatHeightMap, Framebuffer, GridMap, HitSide, RayHit, TILE_EMPTY, TILE_VOID,
+    TILE_WALL, TileMap, TileType, Vec2f, WallTexturer, cast_ray, render_walls,
+    render_walls_with_heights,
 };
 
 struct Solid;

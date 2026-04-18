@@ -178,18 +178,10 @@ mod tests {
     struct StepHeights;
     impl HeightMap for StepHeights {
         fn floor_height(&self, x: i32, _y: i32) -> f64 {
-            if x == 2 {
-                0.3
-            } else {
-                0.0
-            }
+            if x == 2 { 0.3 } else { 0.0 }
         }
         fn ceiling_height(&self, x: i32, _y: i32) -> f64 {
-            if x == 2 {
-                1.5
-            } else {
-                1.0
-            }
+            if x == 2 { 1.5 } else { 1.0 }
         }
     }
 

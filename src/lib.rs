@@ -24,15 +24,15 @@ pub mod renderer;
 pub mod sprite;
 
 pub use camera::Camera;
-pub use floor::{render_floor_ceiling, FloorTexturer};
+pub use floor::{FloorTexturer, render_floor_ceiling};
 pub use framebuffer::{Color, Framebuffer};
-pub use label::{project_labels, render_labels, Font8x8, GlyphRenderer, Label, ProjectedLabel};
+pub use label::{Font8x8, GlyphRenderer, Label, ProjectedLabel, project_labels, render_labels};
 pub use map::{
-    FlatHeightMap, GridMap, HeightMap, TileMap, TileType, TILE_EMPTY, TILE_VOID, TILE_WALL,
+    FlatHeightMap, GridMap, HeightMap, TILE_EMPTY, TILE_VOID, TILE_WALL, TileMap, TileType,
 };
-pub use math::{normalize_angle, Vec2f};
-pub use ray::{cast_ray, HitSide, RayHit};
-pub use renderer::{render_walls, render_walls_with_heights, WallTexturer};
+pub use math::{Vec2f, normalize_angle};
+pub use ray::{HitSide, RayHit, cast_ray};
+pub use renderer::{WallTexturer, render_walls, render_walls_with_heights};
 pub use sprite::{
-    project_sprites, render_sprites, Sprite, SpriteArt, SpriteDef, SpriteRenderResult,
+    Sprite, SpriteArt, SpriteDef, SpriteRenderResult, project_sprites, render_sprites,
 };

@@ -1,8 +1,8 @@
 //! Integration tests for the `label` module.
 
 use termray::{
-    project_labels, render_labels, Color, Font8x8, Framebuffer, GlyphRenderer, HitSide, Label,
-    RayHit,
+    Color, Font8x8, Framebuffer, GlyphRenderer, HitSide, Label, RayHit, project_labels,
+    render_labels,
 };
 
 #[test]

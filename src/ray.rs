@@ -1,4 +1,4 @@
-use crate::map::{TileMap, TILE_VOID};
+use crate::map::{TILE_VOID, TileMap};
 use crate::math::Vec2f;
 
 #[derive(Debug, Clone, Copy)]

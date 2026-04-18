@@ -13,23 +13,23 @@
 //! - `q` / `e` — turn left / right
 //! - `esc` — quit
 
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::{Duration, Instant};
 
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::event::{poll, read, Event, KeyCode};
+use crossterm::event::{Event, KeyCode, poll, read};
 use crossterm::execute;
 use crossterm::style::{
     Color as CtColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
 };
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+    enable_raw_mode, size,
 };
 
 use termray::{
-    render_floor_ceiling, render_walls, Camera, Color, FloorTexturer, Framebuffer, GridMap,
-    HitSide, TileMap, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
+    Camera, Color, FloorTexturer, Framebuffer, GridMap, HitSide, TILE_EMPTY, TILE_WALL, TileMap,
+    TileType, WallTexturer, render_floor_ceiling, render_walls,
 };
 
 struct SolidTexturer;
