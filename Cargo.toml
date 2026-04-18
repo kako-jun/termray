@@ -14,6 +14,7 @@ exclude = [".github/", "target/"]
 rust-version = "1.82.0"
 
 [dependencies]
+font8x8 = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 crossterm = "0.28"
@@ -29,6 +30,10 @@ path = "examples/free_camera.rs"
 [[example]]
 name = "terrain"
 path = "examples/terrain.rs"
+
+[[example]]
+name = "labeled_sprites"
+path = "examples/labeled_sprites.rs"
 
 [profile.release]
 lto = true

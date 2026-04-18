@@ -16,6 +16,7 @@
 pub mod camera;
 pub mod floor;
 pub mod framebuffer;
+pub mod label;
 pub mod map;
 pub mod math;
 pub mod ray;
@@ -25,6 +26,7 @@ pub mod sprite;
 pub use camera::Camera;
 pub use floor::{render_floor_ceiling, FloorTexturer};
 pub use framebuffer::{Color, Framebuffer};
+pub use label::{project_labels, render_labels, Font8x8, GlyphRenderer, Label, ProjectedLabel};
 pub use map::{
     FlatHeightMap, GridMap, HeightMap, TileMap, TileType, TILE_EMPTY, TILE_VOID, TILE_WALL,
 };

@@ -6,6 +6,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `Label`, `ProjectedLabel`, `GlyphRenderer` trait, `Font8x8` default impl,
+  `project_labels`, `render_labels` — world-anchored text labels with
+  word-wrap and two-tier occlusion: glyph-level for text (skipped wholesale
+  if any of its columns is behind a wall) and per-column for the optional
+  background rectangle (#5).
+- `examples/labeled_sprites` — friendly-filer-style demo of sprites with
+  file-name labels that are occluded by walls.
+
+### Notes
+- Glyphs render at the font's native pixel size (no distance scaling) to
+  preserve readability. Applications wanting distance-dependent sizing can
+  wrap their own `GlyphRenderer`.
+- `Font8x8` covers `basic_latin` (0x20..=0x7E). CJK / non-Latin support is
+  expected to come from application-provided `GlyphRenderer` implementations.
+
 ## [0.2.0] - 2026-04-18
 
 ### Added
