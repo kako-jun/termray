@@ -153,9 +153,26 @@ fn close_wall_flat_heights_match_legacy() {
             map.set(x, y, TILE_EMPTY);
         }
     }
-    // Stand 0.25 tiles away from the east wall at row 2 — distance will
-    // project the wall to well over the framebuffer height.
-    let cam = Camera::new(3.75, 2.5, 0.0, 70f64.to_radians());
+    // East wall starts at x=5. Standing at x=4.75 is 0.25 tiles away,
+    // so center-ray distance is 0.25 → projected wall_height =
+    // fb_h/0.25*0.5 = 60 px, safely overflowing fb_h=30.
+    let cam = Camera::new(4.75, 2.5, 0.0, 70f64.to_radians());
+    let rays = cast_all(&map, &cam, 80, 16.0);
+
+    // Guard against future edits silently moving the camera back out
+    // of the overflow regime — this fixture only protects against the
+    // M1 regression if at least one ray hits closer than half a tile.
+    let min_distance = rays
+        .iter()
+        .filter_map(|r| r.as_ref())
+        .map(|h| h.distance)
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        min_distance < 0.5,
+        "close_wall fixture must produce overflow distances (<0.5), \
+         got min={min_distance}. Move the camera closer to the wall."
+    );
+
     let (fb_old, fb_new) = render_both(&map, &cam, 80, 30);
     assert_framebuffers_equal(&fb_old, &fb_new, "close wall 0.25 tile away");
 }
