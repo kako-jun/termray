@@ -80,6 +80,55 @@ impl TileMap for GridMap {
     }
 }
 
+/// World-space heights for floor and ceiling surfaces per tile.
+///
+/// Both methods have a default flat implementation (0.0 / 1.0) so callers can
+/// start with [`FlatHeightMap`] and opt into variation only where needed.
+///
+/// # Coordinate contract
+///
+/// Coordinates can be out-of-bounds; implementations should return sane
+/// defaults (typically the same values used inside the map) rather than
+/// panic. `termray`'s renderer calls these methods for every rendered wall
+/// column, using the `map_x` / `map_y` of the ray hit.
+///
+/// # Orthogonal to [`TileMap`]
+///
+/// `HeightMap` is intentionally a separate trait from [`TileMap`] so an
+/// application can mix and match: the same type may implement both, or you
+/// may pair a `GridMap` with a custom `HeightMap` to keep solidity and
+/// surface heights in different data structures.
+///
+/// # Invariants
+///
+/// Implementations should guarantee `ceiling_height(x, y) >= floor_height(x, y)`
+/// for every coordinate. Violations don't panic — the renderer silently
+/// skips columns where the projected wall inverts — but the resulting
+/// picture is undefined.
+pub trait HeightMap {
+    /// World-space height of the floor surface at tile `(x, y)`.
+    /// Default: `0.0`.
+    fn floor_height(&self, _x: i32, _y: i32) -> f64 {
+        0.0
+    }
+
+    /// World-space height of the ceiling surface at tile `(x, y)`.
+    /// Default: `1.0`.
+    fn ceiling_height(&self, _x: i32, _y: i32) -> f64 {
+        1.0
+    }
+}
+
+/// Zero-sized [`HeightMap`] implementing a fully flat world
+/// (floor=0.0, ceiling=1.0).
+///
+/// Use this when you don't need per-tile height variation. The legacy
+/// [`crate::render_walls`] function implicitly behaves as if a
+/// `FlatHeightMap` were active.
+pub struct FlatHeightMap;
+
+impl HeightMap for FlatHeightMap {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +162,43 @@ mod tests {
         m.set(0, 0, 42); // user-defined
         assert_eq!(m.get(0, 0), Some(42));
         assert!(m.is_solid(0, 0));
+    }
+
+    #[test]
+    fn flat_height_map_defaults_are_zero_and_one() {
+        let h = FlatHeightMap;
+        assert_eq!(h.floor_height(0, 0), 0.0);
+        assert_eq!(h.ceiling_height(0, 0), 1.0);
+        // Out-of-bounds coordinates must not panic and should return the
+        // same flat defaults.
+        assert_eq!(h.floor_height(-5, 1000), 0.0);
+        assert_eq!(h.ceiling_height(-5, 1000), 1.0);
+    }
+
+    struct StepHeights;
+    impl HeightMap for StepHeights {
+        fn floor_height(&self, x: i32, _y: i32) -> f64 {
+            if x == 2 {
+                0.3
+            } else {
+                0.0
+            }
+        }
+        fn ceiling_height(&self, x: i32, _y: i32) -> f64 {
+            if x == 2 {
+                1.5
+            } else {
+                1.0
+            }
+        }
+    }
+
+    #[test]
+    fn custom_height_map_works_through_trait_object() {
+        let h: &dyn HeightMap = &StepHeights;
+        assert_eq!(h.floor_height(0, 0), 0.0);
+        assert_eq!(h.ceiling_height(0, 0), 1.0);
+        assert_eq!(h.floor_height(2, 0), 0.3);
+        assert_eq!(h.ceiling_height(2, 0), 1.5);
     }
 }

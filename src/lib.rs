@@ -25,10 +25,12 @@ pub mod sprite;
 pub use camera::Camera;
 pub use floor::{render_floor_ceiling, FloorTexturer};
 pub use framebuffer::{Color, Framebuffer};
-pub use map::{GridMap, TileMap, TileType, TILE_EMPTY, TILE_VOID, TILE_WALL};
+pub use map::{
+    FlatHeightMap, GridMap, HeightMap, TileMap, TileType, TILE_EMPTY, TILE_VOID, TILE_WALL,
+};
 pub use math::{normalize_angle, Vec2f};
 pub use ray::{cast_ray, HitSide, RayHit};
-pub use renderer::{render_walls, WallTexturer};
+pub use renderer::{render_walls, render_walls_with_heights, WallTexturer};
 pub use sprite::{
     project_sprites, render_sprites, Sprite, SpriteArt, SpriteDef, SpriteRenderResult,
 };
