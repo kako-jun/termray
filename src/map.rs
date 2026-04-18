@@ -13,11 +13,25 @@ pub const TILE_VOID: TileType = 2;
 /// Implementations decide what each tile ID means; termray only cares about
 /// `TILE_EMPTY`, `TILE_WALL`, and `TILE_VOID`. All other IDs are passed through
 /// to [`crate::WallTexturer`].
+///
+/// # `is_solid` contract
+///
+/// `is_solid` is the sole authority for "does a ray stop here?". The raycaster
+/// ([`crate::ray::cast_ray`]) calls it on every cell it steps onto and stops at
+/// the first `true`. The same method is the recommended predicate for
+/// movement / collision in your game loop, so rays and the player agree on
+/// what counts as a wall.
+///
+/// - Out-of-bounds coordinates **must** return `true`. The raycaster bails out
+///   before ever calling `is_solid` for out-of-bounds cells, but movement
+///   collision checks commonly do.
+/// - `TILE_VOID` cells **must** be solid (they are impassable by definition).
+///   The renderer distinguishes VOID from other solids via [`crate::TILE_VOID`]
+///   after the fact.
 pub trait TileMap {
     fn width(&self) -> usize;
     fn height(&self) -> usize;
     fn get(&self, x: i32, y: i32) -> Option<TileType>;
-    /// Whether the tile at `(x, y)` blocks rays. Out-of-bounds should be solid.
     fn is_solid(&self, x: i32, y: i32) -> bool;
 }
 
