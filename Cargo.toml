@@ -26,6 +26,10 @@ path = "examples/maze.rs"
 name = "free_camera"
 path = "examples/free_camera.rs"
 
+[[example]]
+name = "terrain"
+path = "examples/terrain.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1
