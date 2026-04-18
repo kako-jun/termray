@@ -5,23 +5,67 @@ use crate::ray::{cast_ray, RayHit};
 pub struct Camera {
     pub x: f64,
     pub y: f64,
+    /// Eye height in world units (world space, same scale as
+    /// [`crate::HeightMap::floor_height`] / [`crate::HeightMap::ceiling_height`]).
+    ///
+    /// The default value `0.5` matches the implicit assumption of the legacy
+    /// [`crate::render_walls`] renderer, which always treats the camera as
+    /// being centered between floor=0 and ceiling=1. Only
+    /// [`crate::render_walls_with_heights`] currently consults this field;
+    /// the existing `render_walls` / `render_floor_ceiling` keep their
+    /// original flat-world behavior.
+    pub z: f64,
     pub angle: f64,
     pub fov: f64,
 }
 
 impl Camera {
+    /// Construct a camera at the given 2D pose with the default eye
+    /// height (`z = 0.5`), matching the legacy flat-world assumption.
     pub fn new(x: f64, y: f64, angle: f64, fov: f64) -> Self {
-        Self { x, y, angle, fov }
+        Self {
+            x,
+            y,
+            z: 0.5,
+            angle,
+            fov,
+        }
+    }
+
+    /// Construct a camera with an explicit eye height.
+    ///
+    /// Use this when pairing the camera with a non-flat [`crate::HeightMap`]
+    /// and [`crate::render_walls_with_heights`].
+    pub fn with_z(x: f64, y: f64, z: f64, angle: f64, fov: f64) -> Self {
+        Self {
+            x,
+            y,
+            z,
+            angle,
+            fov,
+        }
     }
 
     /// Replace position and yaw in one call.
     ///
     /// Intended for physics-driven camera updates (e.g. `rapier3d`) where both
     /// pose components change every frame. `yaw` is in radians, same convention
-    /// as [`Camera::angle`].
+    /// as [`Camera::angle`]. Leaves [`Camera::z`] untouched.
     pub fn set_pose(&mut self, x: f64, y: f64, yaw: f64) {
         self.x = x;
         self.y = y;
+        self.angle = yaw;
+    }
+
+    /// Replace 3D position and yaw in one call.
+    ///
+    /// Same as [`Camera::set_pose`], but also updates [`Camera::z`]. Use this
+    /// when your physics / terrain step produces an eye-height update in the
+    /// same frame (e.g. stepping up a stair).
+    pub fn set_pose_z(&mut self, x: f64, y: f64, z: f64, yaw: f64) {
+        self.x = x;
+        self.y = y;
+        self.z = z;
         self.angle = yaw;
     }
 
@@ -34,6 +78,11 @@ impl Camera {
     /// Replace yaw only. `yaw` is in radians.
     pub fn set_yaw(&mut self, yaw: f64) {
         self.angle = yaw;
+    }
+
+    /// Replace eye height only.
+    pub fn set_z(&mut self, z: f64) {
+        self.z = z;
     }
 
     /// Unit forward vector in world space (`cos(yaw), sin(yaw)`).
@@ -119,6 +168,48 @@ mod tests {
         let f90 = cam90.forward();
         approx(f90.x, 0.0);
         approx(f90.y, 1.0);
+    }
+
+    #[test]
+    fn new_uses_default_eye_height() {
+        let cam = Camera::new(1.0, 2.0, 0.3, 1.0);
+        approx(cam.z, 0.5);
+    }
+
+    #[test]
+    fn with_z_sets_eye_height_exactly() {
+        let cam = Camera::with_z(1.0, 2.0, 0.75, 0.3, 1.0);
+        approx(cam.x, 1.0);
+        approx(cam.y, 2.0);
+        approx(cam.z, 0.75);
+        approx(cam.angle, 0.3);
+    }
+
+    #[test]
+    fn set_z_replaces_only_eye_height() {
+        let mut cam = Camera::new(1.0, 2.0, 0.3, 1.0);
+        cam.set_z(1.25);
+        approx(cam.x, 1.0);
+        approx(cam.y, 2.0);
+        approx(cam.z, 1.25);
+        approx(cam.angle, 0.3);
+    }
+
+    #[test]
+    fn set_pose_leaves_eye_height_untouched() {
+        let mut cam = Camera::with_z(0.0, 0.0, 0.9, 0.0, 1.0);
+        cam.set_pose(1.0, 2.0, 0.5);
+        approx(cam.z, 0.9);
+    }
+
+    #[test]
+    fn set_pose_z_replaces_all_four_components() {
+        let mut cam = Camera::new(0.0, 0.0, 0.0, 1.0);
+        cam.set_pose_z(1.0, 2.0, 0.8, -0.4);
+        approx(cam.x, 1.0);
+        approx(cam.y, 2.0);
+        approx(cam.z, 0.8);
+        approx(cam.angle, -0.4);
     }
 
     #[test]
