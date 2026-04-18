@@ -115,20 +115,37 @@ fn present(fb: &Framebuffer, status: &str) -> std::io::Result<()> {
     stdout.flush()
 }
 
-/// Step a 1D axis by `delta`, but clamp at solid tiles so the camera cannot
-/// pass through walls. Returns the new coordinate along with whether the step
-/// was blocked (so the caller can kill velocity on that axis).
-fn step_axis(map: &GridMap, x: f64, y: f64, dx: f64, dy: f64, radius: f64) -> (f64, f64, bool) {
-    // Probe slightly ahead along the movement vector so we keep a small
-    // buffer away from walls.
+/// Axis-separated slide collision — move along X only and clamp at solid
+/// tiles. `radius` is the body's half-extent along the movement axis so the
+/// camera stops a little before actually entering a wall cell. Returns the
+/// new X along with whether the step was blocked (so the caller can zero out
+/// that axis's velocity).
+fn step_x(map: &GridMap, x: f64, y: f64, dx: f64, radius: f64) -> (f64, bool) {
+    if dx == 0.0 {
+        return (x, false);
+    }
     let nx = x + dx;
-    let ny = y + dy;
     let probe_x = nx + dx.signum() * radius;
-    let probe_y = ny + dy.signum() * radius;
-    if map.is_solid(probe_x.floor() as i32, probe_y.floor() as i32) {
-        (x, y, true)
+    if map.is_solid(probe_x.floor() as i32, y.floor() as i32) {
+        (x, true)
     } else {
-        (nx, ny, false)
+        (nx, false)
+    }
+}
+
+/// Y counterpart of [`step_x`]. Called after `step_x` has already committed
+/// to a new X, giving standard axis-separated slide behavior (the player
+/// slides along walls instead of stopping dead).
+fn step_y(map: &GridMap, x: f64, y: f64, dy: f64, radius: f64) -> (f64, bool) {
+    if dy == 0.0 {
+        return (y, false);
+    }
+    let ny = y + dy;
+    let probe_y = ny + dy.signum() * radius;
+    if map.is_solid(x.floor() as i32, probe_y.floor() as i32) {
+        (y, true)
+    } else {
+        (ny, false)
     }
 }
 
@@ -206,8 +223,8 @@ fn main() -> std::io::Result<()> {
         vx *= decay;
         vy *= decay;
 
-        let (nx, _, blocked_x) = step_axis(&map, cam.x, cam.y, vx * dt, 0.0, radius);
-        let (_, ny, blocked_y) = step_axis(&map, nx, cam.y, 0.0, vy * dt, radius);
+        let (nx, blocked_x) = step_x(&map, cam.x, cam.y, vx * dt, radius);
+        let (ny, blocked_y) = step_y(&map, nx, cam.y, vy * dt, radius);
         if blocked_x {
             vx = 0.0;
         }
