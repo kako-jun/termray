@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-18
+
 ### Added
 - `Camera::set_pose`, `Camera::set_position`, `Camera::set_yaw` — explicit
   pose setters for physics-driven updates (#4).
