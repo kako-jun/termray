@@ -96,8 +96,10 @@ pub fn render_walls(
 ///
 /// This generalizes [`render_walls`]: feeding a [`crate::FlatHeightMap`] and
 /// a camera with `z = 0.5` produces pixel-identical output to the legacy
-/// `render_walls`. Diverge from those defaults to draw stepped walls — low
-/// fences, tall towers, sunken trenches — without any other renderer change.
+/// `render_walls`, including at close range where the projected wall
+/// overflows the framebuffer. Diverge from those defaults to draw stepped
+/// walls — low fences, tall towers, sunken trenches — without any other
+/// renderer change.
 ///
 /// # Projection
 ///
@@ -112,9 +114,12 @@ pub fn render_walls(
 /// y_bottom     = horizon + (camera.z - floor_h) * px_per_unit
 /// ```
 ///
-/// Pixel writes are clamped to `[0, fb_height)` but the texture coordinate
-/// `wall_y` is computed from the unclamped projection, so any portion of
-/// the wall that spills off-screen does not warp the visible texture.
+/// `y_top` / `y_bottom` are then clamped to `[0, fb_height]`, and the
+/// texture coordinate `wall_y` is stretched across the **visible** range.
+/// This matches the legacy `render_walls` semantics — when a wall is closer
+/// than half a tile, the full wall texture is stretched over the whole
+/// column rather than being cropped. Callers that want geometry-exact
+/// unclamped texturing can derive it from the math above.
 ///
 /// `TILE_VOID` columns are skipped, matching [`render_walls`].
 pub fn render_walls_with_heights(
@@ -143,20 +148,24 @@ pub fn render_walls_with_heights(
         let px_per_unit = fb_h_f / distance * WALL_HEIGHT_SCALE;
         let y_top_f = horizon - (ceil_h - camera.z) * px_per_unit;
         let y_bottom_f = horizon + (camera.z - floor_h) * px_per_unit;
-        let wall_height_px = y_bottom_f - y_top_f;
 
         let brightness = (1.0 - distance / max_depth).max(0.0);
         let th = tile_hash(hit.map_x, hit.map_y);
 
-        // Clamp pixel writes to the framebuffer while preserving the
-        // un-clamped y_top_f / wall_height_px for texture-coordinate math
-        // (so off-screen spill doesn't stretch the visible strip).
-        let y_start = y_top_f.max(0.0).min(fb_h_f) as usize;
-        let y_end = y_bottom_f.max(0.0).min(fb_h_f) as usize;
+        // Clamp to framebuffer, and stretch the texture coordinate across
+        // the visible (clamped) range. This matches legacy `render_walls`
+        // semantics so that a `FlatHeightMap` + `z = 0.5` produces
+        // pixel-identical output even at close range where the projected
+        // wall overflows the column.
+        let visible_top_f = y_top_f.max(0.0).min(fb_h_f);
+        let visible_bottom_f = y_bottom_f.max(0.0).min(fb_h_f);
+        let visible_height = visible_bottom_f - visible_top_f;
+        let y_start = visible_top_f as usize;
+        let y_end = visible_bottom_f as usize;
 
         for y in y_start..y_end {
-            let wall_y = if wall_height_px > 0.0 {
-                (y as f64 - y_top_f) / wall_height_px
+            let wall_y = if visible_height > 0.0 {
+                (y as f64 - visible_top_f) / visible_height
             } else {
                 0.5
             };
