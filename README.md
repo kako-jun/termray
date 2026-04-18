@@ -11,8 +11,9 @@ own textures and sprite art via traits.
 
 Pre-release. `v0.1.0` targets feature parity with the internal raycaster that
 powered [nobiscuit](https://github.com/kako-jun/nobiscuit) v0.1.0, minus the
-application-specific styling. Slopes (#3), arbitrary-angle cameras (#4), and
-sprite text labels (#5) are planned for subsequent minor releases.
+application-specific styling. Arbitrary-angle cameras (#4) landed in `v0.2.0`.
+Slopes (#3) and sprite text labels (#5) are planned for subsequent minor
+releases.
 
 ## Reserved tile IDs
 
@@ -57,11 +58,41 @@ render_floor_ceiling(&mut fb, &rays, &Solid, &cam);
 render_walls(&mut fb, &rays, &Solid, 16.0);
 ```
 
-See `examples/maze.rs` for an interactive demo:
+See `examples/maze.rs` for a keystroke-driven interactive demo, and
+`examples/free_camera.rs` for a physics-style demo with velocity, friction,
+and strafe controls:
 
 ```sh
 cargo run --example maze
+cargo run --example free_camera
 ```
+
+## Free-angle camera (physics integration)
+
+`Camera` stores its pose as `(x: f64, y: f64, angle: f64)` with no grid
+snapping, so it is happy to accept sub-unit positions and arbitrary yaw from
+an external physics engine. The recommended seam is to keep velocity /
+angular state outside the camera and push new poses in each frame:
+
+```rust
+# use termray::Camera;
+# let mut cam = Camera::new(0.0, 0.0, 0.0, 70f64.to_radians());
+# let (mut vx, mut vy, mut yaw) = (0.0_f64, 0.0_f64, 0.0_f64);
+# let dt = 1.0 / 60.0;
+// Every frame, after your rapier3d / custom integrator has produced a new pose:
+let new_x = cam.x + vx * dt;
+let new_y = cam.y + vy * dt;
+cam.set_pose(new_x, new_y, yaw);
+
+// Strafe / velocity math can lean on the unit direction vectors:
+let fwd = cam.forward();     // (cos(yaw), sin(yaw))
+let right = cam.right();     // forward rotated +90°
+vx += (fwd.x + right.x) * dt;
+vy += (fwd.y + right.y) * dt;
+```
+
+`set_position` and `set_yaw` are the corresponding single-axis setters, for
+cases where only one component changes per update.
 
 ## API surface
 
@@ -71,7 +102,7 @@ cargo run --example maze
 | `framebuffer` | `Color`, `Framebuffer` |
 | `map` | `TileType`, `TILE_EMPTY`, `TILE_WALL`, `TILE_VOID`, `TileMap`, `GridMap` |
 | `ray` | `RayHit`, `HitSide`, `cast_ray` |
-| `camera` | `Camera` |
+| `camera` | `Camera` (incl. `set_pose`, `set_position`, `set_yaw`, `forward`, `right`) |
 | `renderer` | `WallTexturer`, `render_walls`, `tile_hash`, `WALL_HEIGHT_SCALE` |
 | `floor` | `FloorTexturer`, `render_floor_ceiling` |
 | `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult`, `project_sprites`, `render_sprites` |
