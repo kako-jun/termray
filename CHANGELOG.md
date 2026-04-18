@@ -15,6 +15,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   velocity math (#4).
 - `examples/free_camera` — physics-style demo with Euler integration,
   friction, and strafe controls (#4).
+- `HeightMap` trait and `FlatHeightMap` zero-sized default — per-tile
+  floor / ceiling heights (#3 Phase 1).
+- `Camera::z`, `Camera::with_z`, `Camera::set_z`, `Camera::set_pose_z` —
+  eye-height state for heightmap-aware rendering (#3 Phase 1). Existing
+  `Camera::new` keeps its signature and initializes `z = 0.5`.
+- `render_walls_with_heights` — new wall renderer that consults a
+  `HeightMap` and the camera's `z`. The original `render_walls` is
+  unchanged and equivalent to calling the new renderer with
+  `FlatHeightMap` + `Camera::z == 0.5` (covered by `tests/back_compat.rs`).
+- `examples/terrain` — stepped-height demo where the camera rises and
+  falls with the tile it stands on (#3 Phase 1).
+
+### Notes
+- Phase 1 handles stepped heights only. `render_floor_ceiling` still paints
+  a flat horizontal plane; true corner-interpolated slopes and
+  `Camera::pitch` are tracked in #8 for `v0.3.0`.
 
 ## [0.1.0] - 2026-04-18
 
