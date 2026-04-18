@@ -9,7 +9,7 @@
 //! Applications that need richer scripts (CJK etc.) supply their own
 //! `GlyphRenderer`.
 
-use font8x8::BASIC_UNICODE;
+use font8x8::legacy::BASIC_LEGACY;
 
 use crate::framebuffer::{Color, Framebuffer};
 use crate::math::normalize_angle;
@@ -63,10 +63,11 @@ impl GlyphRenderer for Font8x8 {
         if !(0x20..=0x7E).contains(&code) {
             return;
         }
-        // `BASIC_UNICODE` lays out U+0000..=U+007F at the matching index, so
-        // for our already-validated basic_latin range we can index directly.
-        // `FontUnicode` is `(char, [u8; 8])` — take the bitmap field.
-        let bitmap: [u8; 8] = BASIC_UNICODE[code as usize].1;
+        // `BASIC_LEGACY` is a flat `[[u8; 8]; 128]` laid out at U+0000..=U+007F
+        // — for our already-validated basic_latin range we can index directly.
+        // Using the `legacy` submodule (always public, no feature flag needed)
+        // avoids pulling in the ~24 KB unicode tables.
+        let bitmap: [u8; 8] = BASIC_LEGACY[code as usize];
         for (row, byte) in bitmap.iter().enumerate() {
             for col in 0i32..8 {
                 // font8x8 bitmap convention: bit 0 (LSB) = leftmost column.
