@@ -1,6 +1,6 @@
 [package]
 name = "termray"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["kako-jun"]
 license = "MIT"
@@ -21,6 +21,10 @@ crossterm = "0.28"
 [[example]]
 name = "maze"
 path = "examples/maze.rs"
+
+[[example]]
+name = "free_camera"
+path = "examples/free_camera.rs"
 
 [profile.release]
 lto = true
