@@ -15,6 +15,20 @@ use crate::framebuffer::{Color, Framebuffer};
 use crate::math::normalize_angle;
 use crate::ray::RayHit;
 
+/// Fraction of the FOV (measured from the centerline) inside which labels survive
+/// culling. Matches the sprite convention so labels fade in/out at the same
+/// screen edges as the sprites they caption.
+const FOV_CULL_FRACTION: f64 = 0.6;
+
+/// Minimum distance (world units) at which a label is still rendered. Labels
+/// closer than this are skipped to avoid absurd on-screen magnification right
+/// in front of the camera — matches the sprite near-cut.
+const MIN_LABEL_DISTANCE: f64 = 0.3;
+
+/// Alpha used when blending a label's optional background rectangle into the
+/// framebuffer. Tuned for readability against both light and dark walls.
+const BACKGROUND_ALPHA: f64 = 0.6;
+
 /// A world-anchored text label rendered as fixed-size glyphs in the framebuffer.
 #[derive(Debug, Clone)]
 pub struct Label {
@@ -29,6 +43,23 @@ pub struct Label {
     pub background: Option<Color>,
     /// If set, wrap text at this many characters (word-wrap on whitespace).
     pub max_chars: Option<usize>,
+}
+
+impl Default for Label {
+    /// Sensible defaults for a label hovering just above a head-height sprite:
+    /// empty text, origin `(0, 0)`, `world_height = 0.8`, white, no background,
+    /// no wrapping.
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            x: 0.0,
+            y: 0.0,
+            world_height: 0.8,
+            color: Color::rgb(255, 255, 255),
+            background: None,
+            max_chars: None,
+        }
+    }
 }
 
 /// Pluggable glyph renderer — lets applications inject their own bitmap fonts
@@ -143,6 +174,11 @@ fn wrap_text(text: &str, max: usize) -> Vec<String> {
 }
 
 fn hard_split(word: &str, max: usize) -> Vec<String> {
+    // Defensive: callers currently only pass non-empty words (since
+    // `split_ascii_whitespace` skips empty items), but guard anyway.
+    if word.is_empty() {
+        return Vec::new();
+    }
     if word.chars().count() <= max {
         return vec![word.to_string()];
     }
@@ -165,10 +201,10 @@ fn hard_split(word: &str, max: usize) -> Vec<String> {
 
 /// Project labels into screen space (FOV-cull + distance-cull + word-wrap).
 ///
-/// Labels behind the camera or outside `±0.6 * fov` are culled, matching the
-/// [`crate::sprite::project_sprites`] convention. Labels closer than 0.3 world
-/// units are also skipped to avoid absurd on-screen magnification right in
-/// front of the camera.
+/// Labels behind the camera or outside `±FOV_CULL_FRACTION * fov` are culled,
+/// matching the [`crate::sprite::project_sprites`] convention. Labels closer
+/// than [`MIN_LABEL_DISTANCE`] world units are also skipped to avoid absurd
+/// on-screen magnification right in front of the camera.
 ///
 /// Results are sorted far-to-near so caller rendering follows the painter's
 /// algorithm — matches [`crate::sprite::project_sprites`].
@@ -194,7 +230,7 @@ pub fn project_labels(
             let dy = lbl.y - camera_y;
             let distance = (dx * dx + dy * dy).sqrt();
 
-            if distance < 0.3 {
+            if distance < MIN_LABEL_DISTANCE {
                 return None;
             }
 
@@ -202,7 +238,7 @@ pub fn project_labels(
             let angle_diff = normalize_angle(label_angle - camera_angle + std::f64::consts::PI)
                 - std::f64::consts::PI;
 
-            if angle_diff.abs() > fov * 0.6 {
+            if angle_diff.abs() > fov * FOV_CULL_FRACTION {
                 return None;
             }
 
@@ -211,7 +247,10 @@ pub fn project_labels(
             let lines = match lbl.max_chars {
                 Some(n) => wrap_text(&lbl.text, n),
                 None => {
-                    if lbl.text.is_empty() {
+                    // Match `wrap_text`'s semantics: a label whose text has no
+                    // visible (non-whitespace) characters is dropped entirely,
+                    // rather than rendering an empty background rectangle.
+                    if lbl.text.chars().all(char::is_whitespace) {
                         Vec::new()
                     } else {
                         vec![lbl.text.clone()]
@@ -304,7 +343,7 @@ pub fn render_labels(
                         if py < 0 || py >= fb_h {
                             continue;
                         }
-                        fb.blend_pixel(px as usize, py as usize, bg, 0.6);
+                        fb.blend_pixel(px as usize, py as usize, bg, BACKGROUND_ALPHA);
                     }
                 }
             }
