@@ -164,8 +164,6 @@ pub fn render_sprites(
     art: &dyn SpriteArt,
     max_depth: f64,
 ) {
-    let _fb_height = fb.height() as f64;
-
     for spr in projected {
         let Some(def) = art.art(spr.sprite_type) else {
             continue;

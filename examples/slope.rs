@@ -207,7 +207,12 @@ fn main() -> std::io::Result<()> {
     let friction = 6.0;
     let turn_rate = 2.4;
     let pitch_rate = 1.5;
-    let pitch_limit = 1.2; // keep under FRAC_PI_2 to avoid tan singularity
+    // Cap pitch at a visually useful range — tan(0.9) ≈ 1.26 shifts the
+    // horizon by a bit over the framebuffer's half-height, i.e. the sky can
+    // sweep down to roughly 1/4 of the screen before we stop. Going past
+    // ~FRAC_PI_2 hits the tan singularity; going past ~1.0 hides so much
+    // of the world that controls feel broken.
+    let pitch_limit = 0.9;
     let radius = 0.2;
 
     enable_raw_mode()?;

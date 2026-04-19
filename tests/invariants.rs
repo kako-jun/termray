@@ -19,7 +19,7 @@
 
 use termray::{
     Camera, Color, CornerHeights, FlatHeightMap, Framebuffer, GridMap, HeightMap, HitSide, Sprite,
-    TILE_EMPTY, TILE_WALL, TileMap, TileType, Vec2f, WallTexturer, cast_ray, project_sprites,
+    TILE_EMPTY, TileMap, TileType, Vec2f, WallTexturer, cast_ray, project_sprites,
     render_floor_ceiling, render_walls,
 };
 
@@ -352,6 +352,4 @@ fn user_defined_tile_ids_still_flow_through() {
     );
     // Render doesn't panic.
     let _ = render_scene(&map, &FlatHeightMap, &cam, 80, 48);
-    // silence unused warning on TILE_WALL import (kept for docs)
-    let _ = TILE_WALL;
 }
