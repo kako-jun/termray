@@ -9,14 +9,18 @@ own textures and sprite art via traits.
 
 ## Status
 
-Pre-release. `v0.1.0` targets feature parity with the internal raycaster that
-powered [nobiscuit](https://github.com/kako-jun/nobiscuit) v0.1.0, minus the
-application-specific styling. Arbitrary-angle cameras (#4) and stepped
-heightmaps (#3 Phase 1) landed in `v0.2.0` — wall tops/bottoms follow a
-per-tile `HeightMap` and the camera carries an eye-height `z`. World-anchored
-text labels on sprites (#5) are now implemented on `main` and will ship with
-`v0.3.0` (unreleased) alongside corner-interpolated true slopes (`Camera.pitch`
-and non-flat floor projection, tracked in #8).
+`v0.3.0` unifies the height / pitch / slope pipeline behind a single
+`CornerHeights` + `HitFace` + `render_walls` / `render_floor_ceiling` pair.
+Walls, floors, sprites, and labels all consult the same `HeightMap` and
+the same `Camera` (now carrying a `pitch` horizon shift), so continuous
+slopes, bowls, and ramps render consistently across every layer. This is a
+breaking release with **no** back-compat shim — see `CHANGELOG.md` for the
+migration list.
+
+Earlier milestones: arbitrary-angle cameras (#4) and stepped heightmaps
+(#3 Phase 1) landed in `v0.2.0`; world-anchored text labels on sprites
+(#5) landed mid-0.2.x; true corner-interpolated slopes, `Camera::pitch`
+and non-flat floor projection ship now as part of (#8).
 
 ## Reserved tile IDs
 
@@ -32,7 +36,7 @@ Your `TileMap::is_solid` implementation is authoritative for blocking rays.
 
 ```rust
 use termray::{
-    render_floor_ceiling, render_walls, Camera, Color, FloorTexturer, Framebuffer,
+    render_floor_ceiling, render_walls, Camera, Color, FlatHeightMap, FloorTexturer, Framebuffer,
     GridMap, HitSide, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
 };
 
@@ -57,20 +61,24 @@ let cam = Camera::new(5.0, 5.0, 0.0, 70f64.to_radians());
 let mut fb = Framebuffer::new(80, 40);
 let rays = cam.cast_all_rays(&map, fb.width(), 16.0);
 
-render_floor_ceiling(&mut fb, &rays, &Solid, &cam);
-render_walls(&mut fb, &rays, &Solid, 16.0);
+// `FlatHeightMap` gives you the pre-v0.3 flat-world look; swap in any
+// `HeightMap` implementation to vary floor / ceiling heights per corner.
+render_floor_ceiling(&mut fb, &rays, &Solid, &FlatHeightMap, &cam, 16.0);
+render_walls(&mut fb, &rays, &Solid, &FlatHeightMap, &cam, 16.0);
 ```
 
 See `examples/maze.rs` for a keystroke-driven interactive demo,
 `examples/free_camera.rs` for a physics-style demo with velocity, friction,
-and strafe controls, and `examples/terrain.rs` for a stepped-heightmap demo
-where the camera's eye height follows the floor as you walk across tiles of
-different elevation:
+and strafe controls, `examples/terrain.rs` for a stepped-heightmap demo
+where the camera's eye height follows the floor, and `examples/slope.rs`
+for a continuous-slope demo with smooth hills and valleys plus `r` / `f`
+pitch controls:
 
 ```sh
 cargo run --example maze
 cargo run --example free_camera
 cargo run --example terrain
+cargo run --example slope
 cargo run --example labeled_sprites
 ```
 
@@ -101,22 +109,25 @@ vy += (fwd.y + right.y) * dt;
 `set_position` and `set_yaw` are the corresponding single-axis setters, for
 cases where only one component changes per update.
 
-## Heightmaps (Phase 1 — stepped heights)
+## Heightmaps (v0.3.0 — corner-interpolated slopes)
 
-`v0.2.0` introduces a `HeightMap` trait that lets walls vary in vertical
-extent per tile, and an eye-height `z` on `Camera` so the viewer can stand
-at different elevations. `render_walls_with_heights` is the new renderer
-that consults both. The existing `render_walls` / `render_floor_ceiling`
-keep their flat-world behavior untouched — nothing on the old path
-regresses.
+The `HeightMap` trait exposes one method, `cell_heights(x, y) ->
+CornerHeights`. Each `CornerHeights` carries four floor and four ceiling
+heights in `[NW, NE, SW, SE]` order; walls, the floor/ceiling renderer,
+sprites, and labels all consult the same data, so a slope is a slope
+everywhere on screen.
+
+The default implementation returns `CornerHeights::flat(0.0, 1.0)` — an
+empty `impl HeightMap for MyType {}` still gives you the pre-v0.3 flat
+world.
 
 ```rust
 use termray::{
-    render_walls_with_heights, Camera, FlatHeightMap, HeightMap,
+    render_floor_ceiling, render_walls, Camera, CornerHeights, FlatHeightMap, HeightMap,
 };
 # use termray::{
-#     render_floor_ceiling, Color, FloorTexturer, Framebuffer, GridMap,
-#     HitSide, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
+#     Color, FloorTexturer, Framebuffer, GridMap, HitSide, TileType,
+#     WallTexturer, TILE_EMPTY, TILE_WALL,
 # };
 # struct Solid;
 # impl WallTexturer for Solid {
@@ -132,36 +143,48 @@ use termray::{
 #     fn sample_ceiling(&self, _x: f64, _y: f64, b: f64) -> Color { Color::rgb(60, 70, 90).darken(b) }
 # }
 
-struct MyHeights;
-impl HeightMap for MyHeights {
-    fn ceiling_height(&self, x: i32, _y: i32) -> f64 {
-        // Short fence in the eastern columns, full-height walls elsewhere.
-        if x >= 6 { 0.4 } else { 1.0 }
+/// Slope rising toward +x: floor height at world corner (cx, cy) is 0.1 * cx.
+/// Using a world-corner function guarantees the continuity contract —
+/// adjacent cells that share a corner return the same value from either side.
+struct Ramp;
+impl HeightMap for Ramp {
+    fn cell_heights(&self, x: i32, y: i32) -> CornerHeights {
+        let at = |cx: i32, _cy: i32| 0.1 * cx as f64;
+        CornerHeights {
+            floor: [at(x, y), at(x + 1, y), at(x, y + 1), at(x + 1, y + 1)],
+            ceil: [1.0; 4],
+        }
     }
 }
 
 # let mut map = GridMap::new(10, 10);
 # for x in 1..9 { for y in 1..9 { map.set(x, y, TILE_EMPTY); } }
 let mut cam = Camera::with_z(5.0, 5.0, 0.5, 0.0, 70f64.to_radians());
+cam.set_pitch(0.1); // look slightly up — uniform horizon shift for walls/floor/sprites
 let mut fb = Framebuffer::new(80, 40);
 let rays = cam.cast_all_rays(&map, fb.width(), 16.0);
 
-// Floor/ceiling still use the flat-world renderer in Phase 1.
-render_floor_ceiling(&mut fb, &rays, &Solid, &cam);
-// Walls now consult per-tile heights and the camera's eye height.
-render_walls_with_heights(&mut fb, &rays, &Solid, &MyHeights, &cam, 16.0);
+render_floor_ceiling(&mut fb, &rays, &Solid, &Ramp, &cam, 16.0);
+render_walls(&mut fb, &rays, &Solid, &Ramp, &cam, 16.0);
 
-// When the player steps onto a raised tile, lift the camera with them:
-let floor_here = MyHeights.floor_height(cam.x.floor() as i32, cam.y.floor() as i32);
+// Track the slope under the player: sample the floor bilinearly at the
+// exact camera position for smooth vertical motion.
+let cx = cam.x.floor() as i32;
+let cy = cam.y.floor() as i32;
+let u = cam.x - cx as f64;
+let v = cam.y - cy as f64;
+let floor_here = Ramp.cell_heights(cx, cy).sample_floor(u, v);
 cam.set_z(floor_here + 0.5);
 ```
 
-Phase 1 deliberately limits itself to **stepped** heights — wall tops and
-bottoms snap to the tile's `floor_height` / `ceiling_height`, and
-`render_floor_ceiling` still paints a flat horizontal plane. True
-corner-interpolated slopes, `Camera.pitch`, and ray-floor intersection are
-tracked separately in [#8](https://github.com/kako-jun/termray/issues/8)
-for `v0.3.0` (the release street-golf will depend on for SRTM terrain).
+**Continuity contract.** Cells share corners with their neighbours. For
+continuous ground the shared corner values must agree between the two
+cells — writing your heightmap as a world-corner function (like `Ramp`
+above) is the easiest way to guarantee that. Non-matching corners are
+allowed and render as intentional step edges (`examples/terrain.rs`).
+
+See `examples/slope.rs` for a hill + bowl demo and
+[#8](https://github.com/kako-jun/termray/issues/8) for the design notes.
 
 ## Sprite text labels
 
@@ -188,7 +211,12 @@ let labels = vec![Label {
     max_chars: Some(12),               // greedy word-wrap on whitespace
 }];
 
-let projected = project_labels(&labels, cam_x, cam_y, cam_angle, fov, fb.width());
+# use termray::{Camera, FlatHeightMap};
+# let cam = Camera::new(cam_x, cam_y, cam_angle, fov);
+// `project_labels` takes the same camera + heightmap you render the world
+// with, so captions inherit both the pitch horizon shift and the slope
+// under their anchor point.
+let projected = project_labels(&labels, &cam, &FlatHeightMap, fb.width(), fb.height());
 render_labels(&mut fb, &projected, &rays, &Font8x8, 16.0);
 ```
 
@@ -214,12 +242,12 @@ interior wall.
 | --- | --- |
 | `math` | `Vec2f`, `normalize_angle` |
 | `framebuffer` | `Color`, `Framebuffer` |
-| `map` | `TileType`, `TILE_EMPTY`, `TILE_WALL`, `TILE_VOID`, `TileMap`, `GridMap`, `HeightMap`, `FlatHeightMap` |
-| `ray` | `RayHit`, `HitSide`, `cast_ray` |
-| `camera` | `Camera` (incl. `with_z`, `set_pose`, `set_pose_z`, `set_position`, `set_yaw`, `set_z`, `forward`, `right`) |
-| `renderer` | `WallTexturer`, `render_walls`, `render_walls_with_heights`, `tile_hash`, `WALL_HEIGHT_SCALE` |
+| `map` | `TileType`, `TILE_EMPTY`, `TILE_WALL`, `TILE_VOID`, `TileMap`, `GridMap`, `HeightMap`, `FlatHeightMap`, `CornerHeights`, `CORNER_NW`/`NE`/`SW`/`SE` |
+| `ray` | `RayHit`, `HitSide`, `HitFace`, `cast_ray` |
+| `camera` | `Camera` (incl. `with_z`, `set_pose`, `set_position`, `set_yaw`, `set_z`, `set_pitch`, `forward`, `right`) |
+| `renderer` | `WallTexturer`, `render_walls`, `tile_hash`, `WALL_HEIGHT_SCALE` |
 | `floor` | `FloorTexturer`, `render_floor_ceiling` |
-| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult`, `project_sprites`, `render_sprites` |
+| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult` (with `screen_y_feet`), `project_sprites`, `render_sprites` |
 | `label` | `Label`, `ProjectedLabel`, `GlyphRenderer`, `Font8x8`, `project_labels`, `render_labels` |
 
 ## Relationship to nobiscuit-engine

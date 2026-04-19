@@ -35,6 +35,10 @@ path = "examples/terrain.rs"
 name = "labeled_sprites"
 path = "examples/labeled_sprites.rs"
 
+[[example]]
+name = "slope"
+path = "examples/slope.rs"
+
 [profile.release]
 lto = true
 codegen-units = 1
