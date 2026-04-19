@@ -11,7 +11,9 @@
 
 use font8x8::legacy::BASIC_LEGACY;
 
+use crate::camera::{Camera, projection_center_y};
 use crate::framebuffer::{Color, Framebuffer};
+use crate::map::HeightMap;
 use crate::math::normalize_angle;
 use crate::ray::RayHit;
 
@@ -20,10 +22,8 @@ use crate::ray::RayHit;
 /// screen edges as the sprites they caption.
 const FOV_CULL_FRACTION: f64 = 0.6;
 
-/// Minimum distance (world units) at which a label is still rendered. Labels
-/// closer than this are skipped to avoid absurd on-screen magnification right
-/// in front of the camera — matches the sprite near-cut.
-const MIN_LABEL_DISTANCE: f64 = 0.3;
+// Label near-cut is unified with the sprite near-cut via
+// [`crate::MIN_PROJECTION_DISTANCE`] — see that constant for rationale.
 
 /// Alpha used when blending a label's optional background rectangle into the
 /// framebuffer. Tuned for readability against both light and dark walls.
@@ -123,10 +123,16 @@ pub struct ProjectedLabel {
     pub lines: Vec<String>,
     pub color: Color,
     pub background: Option<Color>,
-    /// World height used for vertical projection. Preserved from the source
-    /// [`Label`] because [`render_labels`] re-projects each label's vertical
-    /// position at paint time (see the caveat on [`project_labels`]).
-    pub world_height: f64,
+    /// Pre-computed screen y (framebuffer pixels, fractional) of the
+    /// baseline the renderer draws the first text line against. Projected
+    /// in [`project_labels`] from the source [`Label`]'s `world_height`
+    /// plus the bilinear-sampled floor height under the label anchor,
+    /// with the camera pitch horizon shift applied — matches the sprite
+    /// projection so a label attached to a sprite tracks it on sloped
+    /// ground. Kept as `f64` so sub-pixel pitch transitions don't
+    /// introduce aliasing; quantized to `i32` inside [`render_labels`]
+    /// at glyph-write time.
+    pub screen_y_baseline: f64,
 }
 
 /// Greedy word-wrap on ASCII whitespace. Words longer than `max` are hard-split
@@ -203,8 +209,9 @@ fn hard_split(word: &str, max: usize) -> Vec<String> {
 ///
 /// Labels behind the camera or outside `±FOV_CULL_FRACTION * fov` are culled,
 /// matching the [`crate::sprite::project_sprites`] convention. Labels closer
-/// than [`MIN_LABEL_DISTANCE`] world units are also skipped to avoid absurd
-/// on-screen magnification right in front of the camera.
+/// than [`crate::MIN_PROJECTION_DISTANCE`] world units are also skipped to
+/// avoid absurd on-screen magnification right in front of the camera —
+/// shared with sprites so an icon + caption pair disappears together.
 ///
 /// Results are sorted far-to-near so caller rendering follows the painter's
 /// algorithm — matches [`crate::sprite::project_sprites`].
@@ -217,12 +224,20 @@ fn hard_split(word: &str, max: usize) -> Vec<String> {
 /// mismatched widths will produce vertically misaligned text.
 pub fn project_labels(
     labels: &[Label],
-    camera_x: f64,
-    camera_y: f64,
-    camera_angle: f64,
-    fov: f64,
+    camera: &Camera,
+    heights: &dyn HeightMap,
     screen_width: usize,
+    screen_height: usize,
 ) -> Vec<ProjectedLabel> {
+    // Vertical projection anchors: matches `project_sprites` so an icon +
+    // caption pair shares the same horizon shift under pitch / slope.
+    let center_y = projection_center_y(screen_width, screen_height, camera);
+    let focal_y = screen_height as f64 / 2.0;
+    let fov = camera.fov;
+    let camera_x = camera.x;
+    let camera_y = camera.y;
+    let camera_angle = camera.angle;
+
     let mut results: Vec<ProjectedLabel> = labels
         .iter()
         .filter_map(|lbl| {
@@ -230,7 +245,7 @@ pub fn project_labels(
             let dy = lbl.y - camera_y;
             let distance = (dx * dx + dy * dy).sqrt();
 
-            if distance < MIN_LABEL_DISTANCE {
+            if distance < crate::MIN_PROJECTION_DISTANCE {
                 return None;
             }
 
@@ -262,13 +277,31 @@ pub fn project_labels(
                 return None;
             }
 
+            // Sample the floor under the label's world anchor so the
+            // `world_height` offset is measured from the actual ground at
+            // `(lbl.x, lbl.y)` — matching how a sprite at the same
+            // `(x, y)` is planted (see `project_sprites`).
+            let cell_x = lbl.x.floor() as i32;
+            let cell_y = lbl.y.floor() as i32;
+            let u = lbl.x - cell_x as f64;
+            let v = lbl.y - cell_y as f64;
+            let floor_h = heights
+                .cell_heights(cell_x, cell_y)
+                .sample_floor(u.clamp(0.0, 1.0), v.clamp(0.0, 1.0));
+
+            // Projected baseline y: the label anchor is at world z =
+            // floor_h + world_height, so
+            //   y = center_y + focal_y * (camera.z - (floor_h + world_height)) / d.
+            let baseline_y =
+                center_y + focal_y * (camera.z - (floor_h + lbl.world_height)) / distance;
+
             Some(ProjectedLabel {
                 screen_x,
                 distance,
                 lines,
                 color: lbl.color,
                 background: lbl.background,
-                world_height: lbl.world_height,
+                screen_y_baseline: baseline_y,
             })
         })
         .collect();
@@ -307,16 +340,17 @@ pub fn render_labels(
 
     let fb_w = fb.width() as i32;
     let fb_h = fb.height() as i32;
-    let center_y = fb_h / 2;
 
     for lbl in projected {
         if lbl.distance > max_depth || lbl.lines.is_empty() {
             continue;
         }
 
-        // Vertical projection matches sprite.rs: center_y - (screen_width / distance) * world_height.
-        // `screen_width` here is the framebuffer width (same as the sprite path).
-        let baseline_y = center_y - ((fb_w as f64 / lbl.distance) * lbl.world_height) as i32;
+        // Use the baseline pre-computed in `project_labels` — it already
+        // folds in the camera pitch and the sampled floor under the label.
+        // Quantize the f64 baseline here at the pixel-write boundary so
+        // pitch transitions don't double-round.
+        let baseline_y = lbl.screen_y_baseline as i32;
 
         for (li, line) in lbl.lines.iter().enumerate() {
             let line_chars: Vec<char> = line.chars().collect();

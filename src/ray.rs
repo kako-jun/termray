@@ -1,19 +1,64 @@
-use crate::map::{TileMap, TILE_VOID};
+use crate::map::{TILE_VOID, TileMap};
 use crate::math::Vec2f;
 
-#[derive(Debug, Clone, Copy)]
+/// Which axis a [`RayHit`] crossed when the DDA ended.
+///
+/// Coarser than [`HitFace`]: `Vertical` means the ray ended on an
+/// x-aligned cell boundary (i.e. hit a West or East face), `Horizontal`
+/// means it ended on a y-aligned boundary (North or South face).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitSide {
     Vertical,
     Horizontal,
+}
+
+/// Which of the four cell faces a [`RayHit`] struck.
+///
+/// Named after the compass direction of the face's normal:
+///
+/// - `West`  — face at `x = map_x`,     normal pointing −x. The ray came from
+///   the west (its `step_x > 0`).
+/// - `East`  — face at `x = map_x + 1`, normal pointing +x. The ray came from
+///   the east (its `step_x < 0`).
+/// - `North` — face at `y = map_y`,     normal pointing −y. The ray came from
+///   the north (its `step_y > 0`).
+/// - `South` — face at `y = map_y + 1`, normal pointing +y. The ray came from
+///   the south (its `step_y < 0`).
+///
+/// The corner-interpolating wall renderer uses this to pick the correct
+/// pair of corner heights from [`crate::CornerHeights`] for the hit face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HitFace {
+    West,
+    East,
+    North,
+    South,
 }
 
 #[derive(Debug, Clone)]
 pub struct RayHit {
     pub distance: f64,
     pub side: HitSide,
+    /// Which of the four cell faces the ray hit. Used by the
+    /// corner-interpolating wall renderer to pick the right edge of the
+    /// cell's [`crate::CornerHeights`]. See [`HitFace`].
+    pub face: HitFace,
     pub map_x: i32,
     pub map_y: i32,
-    /// Fractional position along the wall surface (0.0..1.0). For `TILE_VOID`, unspecified (0.0).
+    /// Fractional position along the wall surface (0.0..1.0).
+    ///
+    /// For `TILE_VOID` this is set to `f64::NAN` as a sentinel — VOID hits are
+    /// meant to be consumed without face interpolation, and routing an NaN
+    /// through any accidental sampler will surface the mistake as a visible
+    /// NaN-poisoned region rather than an off-by-a-fraction texture.
+    ///
+    /// The direction of increasing `wall_x` across the face follows the
+    /// face's internal orientation (see [`HitFace`]):
+    ///
+    /// - `West`  face: 0.0 at the **NW** corner, 1.0 at the **SW** corner.
+    /// - `East`  face: 0.0 at the **NE** corner, 1.0 at the **SE** corner.
+    /// - `North` face: 0.0 at the **NW** corner, 1.0 at the **NE** corner.
+    /// - `South` face: 0.0 at the **SW** corner, 1.0 at the **SE** corner.
     pub wall_x: f64,
     pub tile: u8,
 }
@@ -83,13 +128,41 @@ pub fn cast_ray(map: &dyn TileMap, origin: Vec2f, angle: f64, max_depth: f64) ->
                 }
             };
 
+            // Identify which of the four faces of this cell the ray crossed.
+            // Vertical side + east-going ray (step_x > 0) means the ray hit
+            // the cell's West face; same side + west-going ray hits the East
+            // face. Same logic for Horizontal + N/S.
+            let face = match side {
+                HitSide::Vertical => {
+                    if step_x > 0 {
+                        HitFace::West
+                    } else {
+                        HitFace::East
+                    }
+                }
+                HitSide::Horizontal => {
+                    if step_y > 0 {
+                        HitFace::North
+                    } else {
+                        HitFace::South
+                    }
+                }
+            };
+
             if tile == TILE_VOID {
+                // VOID columns are never sampled for face interpolation — all
+                // callers short-circuit on `tile == TILE_VOID` before touching
+                // `wall_x`. Use NaN as a sentinel so any bug that quietly
+                // threads it through (e.g. a future renderer forgetting the
+                // VOID branch) surfaces as an NaN-poisoned calculation rather
+                // than a silently-off texture coordinate.
                 return Some(RayHit {
                     distance: perp_dist,
                     side,
+                    face,
                     map_x,
                     map_y,
-                    wall_x: 0.0,
+                    wall_x: f64::NAN,
                     tile: TILE_VOID,
                 });
             }
@@ -112,11 +185,61 @@ pub fn cast_ray(map: &dyn TileMap, origin: Vec2f, angle: f64, max_depth: f64) ->
             return Some(RayHit {
                 distance: perp_dist,
                 side,
+                face,
                 map_x,
                 map_y,
                 wall_x,
                 tile,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{TILE_EMPTY, TileMap};
+
+    /// Tiny GridMap wrapper that reports cell (2, 2) as TILE_VOID so we can
+    /// exercise the VOID branch of `cast_ray`. Everything else walkable.
+    struct VoidMap;
+    impl TileMap for VoidMap {
+        fn width(&self) -> usize {
+            8
+        }
+        fn height(&self) -> usize {
+            8
+        }
+        fn get(&self, x: i32, y: i32) -> Option<crate::map::TileType> {
+            if !(0..8).contains(&x) || !(0..8).contains(&y) {
+                return None;
+            }
+            if x == 2 && y == 0 {
+                Some(TILE_VOID)
+            } else {
+                Some(TILE_EMPTY)
+            }
+        }
+        fn is_solid(&self, x: i32, y: i32) -> bool {
+            !matches!(self.get(x, y), Some(TILE_EMPTY))
+        }
+    }
+
+    #[test]
+    fn void_hit_reports_nan_wall_x() {
+        // Ray goes +x from (0.5, 0.5); the VOID cell at (2, 0) is hit after
+        // walking across (1, 0). The hit's `wall_x` must be NaN so any
+        // accidental face-interpolation consumer produces NaN-poisoned
+        // output instead of a plausible-but-wrong texture coordinate.
+        let map = VoidMap;
+        let hit = cast_ray(&map, Vec2f::new(0.5, 0.5), 0.0, 16.0).expect("should hit VOID");
+        assert_eq!(hit.tile, TILE_VOID);
+        assert!(
+            hit.wall_x.is_nan(),
+            "VOID wall_x should be NaN sentinel, got {}",
+            hit.wall_x
+        );
+        // distance must still be finite so callers can do depth-testing.
+        assert!(hit.distance.is_finite());
     }
 }

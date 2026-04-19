@@ -11,24 +11,24 @@
 //! - `a` / `d` — turn left / right
 //! - `q`       — quit
 
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::Duration;
 
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::event::{poll, read, Event, KeyCode};
+use crossterm::event::{Event, KeyCode, poll, read};
 use crossterm::execute;
 use crossterm::style::{
     Color as CtColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
 };
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+    enable_raw_mode, size,
 };
 
 use termray::{
-    project_labels, project_sprites, render_floor_ceiling, render_labels, render_sprites,
-    render_walls, Camera, Color, FloorTexturer, Font8x8, Framebuffer, GridMap, HitSide, Label,
-    Sprite, SpriteArt, SpriteDef, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
+    Camera, Color, FlatHeightMap, FloorTexturer, Font8x8, Framebuffer, GridMap, HitSide, Label,
+    Sprite, SpriteArt, SpriteDef, TILE_EMPTY, TILE_WALL, TileType, WallTexturer, project_labels,
+    project_sprites, render_floor_ceiling, render_labels, render_sprites, render_walls,
 };
 
 // ---------- world / textures ----------
@@ -220,13 +220,13 @@ fn main() -> std::io::Result<()> {
     loop {
         fb.clear(Color::default());
         let rays = cam.cast_all_rays(&map, fb_w, 16.0);
-        render_floor_ceiling(&mut fb, &rays, &scene, &cam);
-        render_walls(&mut fb, &rays, &scene, 16.0);
+        render_floor_ceiling(&mut fb, &rays, &scene, &FlatHeightMap, &cam, 16.0);
+        render_walls(&mut fb, &rays, &scene, &FlatHeightMap, &cam, 16.0);
 
-        let projected_sprites = project_sprites(&sprites, cam.x, cam.y, cam.angle, cam.fov, fb_w);
+        let projected_sprites = project_sprites(&sprites, &cam, &FlatHeightMap, fb_w, fb_h);
         render_sprites(&mut fb, &projected_sprites, &rays, &art, 16.0);
 
-        let projected_labels = project_labels(&labels, cam.x, cam.y, cam.angle, cam.fov, fb_w);
+        let projected_labels = project_labels(&labels, &cam, &FlatHeightMap, fb_w, fb_h);
         render_labels(&mut fb, &projected_labels, &rays, &Font8x8, 16.0);
 
         present(&fb)?;

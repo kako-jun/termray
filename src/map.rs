@@ -80,17 +80,112 @@ impl TileMap for GridMap {
     }
 }
 
-/// World-space heights for floor and ceiling surfaces per tile.
+/// Per-cell floor and ceiling corner heights.
 ///
-/// Both methods have a default flat implementation (0.0 / 1.0) so callers can
-/// start with [`FlatHeightMap`] and opt into variation only where needed.
+/// # Corner ordering
+///
+/// All four-element arrays use the same ordering: `[NW, NE, SW, SE]`.
+/// Within the world grid the corners of cell `(x, y)` are at:
+///
+/// - `NW` → world `(x,   y  )`
+/// - `NE` → world `(x+1, y  )`
+/// - `SW` → world `(x,   y+1)`
+/// - `SE` → world `(x+1, y+1)`
+///
+/// (y increases southward in termray's world coordinates, matching how
+/// [`crate::ray::cast_ray`] walks the grid.)
+///
+/// # Continuity contract
+///
+/// Adjacent cells share corners. A `HeightMap` implementation **should**
+/// return matching values on the shared corners of neighboring cells —
+/// e.g. cell `(x, y)`'s `NE` and cell `(x+1, y)`'s `NW` both refer to the
+/// same world corner `(x+1, y)` and should be equal. The renderer does not
+/// panic when this contract is violated, but a mismatch produces a visible
+/// seam ("tear") at the shared cell edge.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CornerHeights {
+    /// Floor heights at the four corners, in `[NW, NE, SW, SE]` order.
+    pub floor: [f64; 4],
+    /// Ceiling heights at the four corners, in `[NW, NE, SW, SE]` order.
+    pub ceil: [f64; 4],
+}
+
+/// Array index of the NW corner inside a `[f64; 4]` from [`CornerHeights`].
+pub const CORNER_NW: usize = 0;
+/// Array index of the NE corner inside a `[f64; 4]` from [`CornerHeights`].
+pub const CORNER_NE: usize = 1;
+/// Array index of the SW corner inside a `[f64; 4]` from [`CornerHeights`].
+pub const CORNER_SW: usize = 2;
+/// Array index of the SE corner inside a `[f64; 4]` from [`CornerHeights`].
+pub const CORNER_SE: usize = 3;
+
+impl CornerHeights {
+    /// Construct a [`CornerHeights`] whose floor and ceiling are both flat
+    /// (all four corners at the same height).
+    ///
+    /// This is the fast path for tile-flat worlds: `CornerHeights::flat(0.0, 1.0)`
+    /// reproduces the implicit projection of pre-v0.3 termray.
+    pub const fn flat(floor: f64, ceil: f64) -> Self {
+        Self {
+            floor: [floor; 4],
+            ceil: [ceil; 4],
+        }
+    }
+
+    /// Bilinear sample of the floor surface at local coordinates `(u, v)`.
+    ///
+    /// `u` maps from the west edge (0.0) to the east edge (1.0) of the cell.
+    /// `v` maps from the north edge (0.0) to the south edge (1.0).
+    /// Values outside [0, 1] are not clamped — the same bilinear formula
+    /// extrapolates, which is useful for ray-intersection math that may
+    /// sample slightly past a corner due to floating-point error.
+    pub fn sample_floor(&self, u: f64, v: f64) -> f64 {
+        bilinear(&self.floor, u, v)
+    }
+
+    /// Bilinear sample of the ceiling surface at local coordinates `(u, v)`.
+    /// See [`CornerHeights::sample_floor`] for the coordinate convention.
+    pub fn sample_ceil(&self, u: f64, v: f64) -> f64 {
+        bilinear(&self.ceil, u, v)
+    }
+}
+
+fn bilinear(corners: &[f64; 4], u: f64, v: f64) -> f64 {
+    // corners = [NW, NE, SW, SE] with NW at (u=0, v=0), SE at (u=1, v=1).
+    let nw = corners[CORNER_NW];
+    let ne = corners[CORNER_NE];
+    let sw = corners[CORNER_SW];
+    let se = corners[CORNER_SE];
+    let top = nw * (1.0 - u) + ne * u;
+    let bot = sw * (1.0 - u) + se * u;
+    top * (1.0 - v) + bot * v
+}
+
+impl Default for CornerHeights {
+    /// Flat unit cell: floor at `0.0`, ceiling at `1.0`.
+    fn default() -> Self {
+        Self::flat(0.0, 1.0)
+    }
+}
+
+/// World-space floor and ceiling heights per cell corner.
+///
+/// Returns four corner heights for both floor and ceiling — see
+/// [`CornerHeights`] for the `[NW, NE, SW, SE]` ordering convention and the
+/// continuity contract between adjacent cells.
+///
+/// The default implementation returns [`CornerHeights::flat(0.0, 1.0)`],
+/// which reproduces pre-v0.3 termray's implicit projection. Wrap your
+/// `HeightMap` around data of your choice (per-tile arrays, SRTM samples,
+/// procedural noise) to vary heights.
 ///
 /// # Coordinate contract
 ///
 /// Coordinates can be out-of-bounds; implementations should return sane
-/// defaults (typically the same values used inside the map) rather than
-/// panic. `termray`'s renderer calls these methods for every rendered wall
-/// column, using the `map_x` / `map_y` of the ray hit.
+/// defaults (typically `CornerHeights::flat(0.0, 1.0)`) rather than panic.
+/// termray calls `cell_heights` for every rendered wall column and every
+/// walked cell in the floor / ceiling renderer.
 ///
 /// # Orthogonal to [`TileMap`]
 ///
@@ -101,30 +196,21 @@ impl TileMap for GridMap {
 ///
 /// # Invariants
 ///
-/// Implementations should guarantee `ceiling_height(x, y) >= floor_height(x, y)`
-/// for every coordinate. Violations don't panic — the renderer silently
-/// skips columns where the projected wall inverts — but the resulting
-/// picture is undefined.
+/// Implementations should guarantee `ceil[i] >= floor[i]` at every corner.
+/// Violations don't panic — the renderer silently skips columns where the
+/// projected wall inverts — but the resulting picture is undefined.
 pub trait HeightMap {
-    /// World-space height of the floor surface at tile `(x, y)`.
-    /// Default: `0.0`.
-    fn floor_height(&self, _x: i32, _y: i32) -> f64 {
-        0.0
-    }
-
-    /// World-space height of the ceiling surface at tile `(x, y)`.
-    /// Default: `1.0`.
-    fn ceiling_height(&self, _x: i32, _y: i32) -> f64 {
-        1.0
+    /// Corner heights at cell `(x, y)`.
+    fn cell_heights(&self, _x: i32, _y: i32) -> CornerHeights {
+        CornerHeights::flat(0.0, 1.0)
     }
 }
 
 /// Zero-sized [`HeightMap`] implementing a fully flat world
-/// (floor=0.0, ceiling=1.0).
+/// (floor=0.0, ceiling=1.0 at every corner).
 ///
-/// Use this when you don't need per-tile height variation. The legacy
-/// [`crate::render_walls`] function implicitly behaves as if a
-/// `FlatHeightMap` were active.
+/// Use this when you don't need per-tile height variation — the resulting
+/// projection matches pre-v0.3 termray's implicit flat-world behavior.
 pub struct FlatHeightMap;
 
 impl HeightMap for FlatHeightMap {}
@@ -167,28 +253,45 @@ mod tests {
     #[test]
     fn flat_height_map_defaults_are_zero_and_one() {
         let h = FlatHeightMap;
-        assert_eq!(h.floor_height(0, 0), 0.0);
-        assert_eq!(h.ceiling_height(0, 0), 1.0);
+        let ch = h.cell_heights(0, 0);
+        assert_eq!(ch.floor, [0.0; 4]);
+        assert_eq!(ch.ceil, [1.0; 4]);
         // Out-of-bounds coordinates must not panic and should return the
         // same flat defaults.
-        assert_eq!(h.floor_height(-5, 1000), 0.0);
-        assert_eq!(h.ceiling_height(-5, 1000), 1.0);
+        let oob = h.cell_heights(-5, 1000);
+        assert_eq!(oob, CornerHeights::flat(0.0, 1.0));
+    }
+
+    #[test]
+    fn corner_heights_flat_sets_all_four_corners() {
+        let ch = CornerHeights::flat(0.25, 1.75);
+        assert_eq!(ch.floor, [0.25; 4]);
+        assert_eq!(ch.ceil, [1.75; 4]);
+    }
+
+    #[test]
+    fn corner_heights_bilinear_samples_as_expected() {
+        // Tilted floor rising east-to-south: NW=0, NE=0.5, SW=0.5, SE=1.0.
+        let ch = CornerHeights {
+            floor: [0.0, 0.5, 0.5, 1.0],
+            ceil: [1.0, 1.0, 1.0, 1.0],
+        };
+        // Corners: NW, NE, SW, SE.
+        assert!((ch.sample_floor(0.0, 0.0) - 0.0).abs() < 1e-12);
+        assert!((ch.sample_floor(1.0, 0.0) - 0.5).abs() < 1e-12);
+        assert!((ch.sample_floor(0.0, 1.0) - 0.5).abs() < 1e-12);
+        assert!((ch.sample_floor(1.0, 1.0) - 1.0).abs() < 1e-12);
+        // Center = average of four corners.
+        assert!((ch.sample_floor(0.5, 0.5) - 0.5).abs() < 1e-12);
     }
 
     struct StepHeights;
     impl HeightMap for StepHeights {
-        fn floor_height(&self, x: i32, _y: i32) -> f64 {
+        fn cell_heights(&self, x: i32, _y: i32) -> CornerHeights {
             if x == 2 {
-                0.3
+                CornerHeights::flat(0.3, 1.5)
             } else {
-                0.0
-            }
-        }
-        fn ceiling_height(&self, x: i32, _y: i32) -> f64 {
-            if x == 2 {
-                1.5
-            } else {
-                1.0
+                CornerHeights::flat(0.0, 1.0)
             }
         }
     }
@@ -196,9 +299,11 @@ mod tests {
     #[test]
     fn custom_height_map_works_through_trait_object() {
         let h: &dyn HeightMap = &StepHeights;
-        assert_eq!(h.floor_height(0, 0), 0.0);
-        assert_eq!(h.ceiling_height(0, 0), 1.0);
-        assert_eq!(h.floor_height(2, 0), 0.3);
-        assert_eq!(h.ceiling_height(2, 0), 1.5);
+        let at0 = h.cell_heights(0, 0);
+        assert_eq!(at0.floor, [0.0; 4]);
+        assert_eq!(at0.ceil, [1.0; 4]);
+        let at2 = h.cell_heights(2, 0);
+        assert_eq!(at2.floor, [0.3; 4]);
+        assert_eq!(at2.ceil, [1.5; 4]);
     }
 }

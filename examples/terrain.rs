@@ -6,35 +6,34 @@
 //! height tracks the floor height of the tile it stands on, so stepping
 //! into a sunken pit visibly lowers the horizon.
 //!
+//! Since v0.3.0 the floor / ceiling renderer also reads the same
+//! `HeightMap`, so the step edges of the terrain are visible on the ground
+//! plane too — no more flat-world seam. See `examples/slope.rs` for a
+//! continuous-slope demo.
+//!
 //! Run with `cargo run --example terrain`. Controls:
 //! - `w` / `s` — accelerate forward / back along the camera's facing
 //! - `a` / `d` — strafe left / right (perpendicular to facing)
 //! - `q` / `e` — turn left / right
 //! - `esc` — quit
-//!
-//! NOTE (Phase 1): floor and ceiling pixels are still drawn by the existing
-//! `render_floor_ceiling`, which assumes a perfectly flat world. The
-//! perspective seam between flat floor pixels and stepped walls is the
-//! expected Phase 1 limitation; true per-tile floors/ceilings are tracked
-//! in termray#8.
 
-use std::io::{stdout, Write};
+use std::io::{Write, stdout};
 use std::time::{Duration, Instant};
 
 use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::event::{poll, read, Event, KeyCode};
+use crossterm::event::{Event, KeyCode, poll, read};
 use crossterm::execute;
 use crossterm::style::{
     Color as CtColor, Print, ResetColor, SetBackgroundColor, SetForegroundColor,
 };
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, size, Clear, ClearType, EnterAlternateScreen,
-    LeaveAlternateScreen,
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+    enable_raw_mode, size,
 };
 
 use termray::{
-    render_floor_ceiling, render_walls_with_heights, Camera, Color, FloorTexturer, Framebuffer,
-    GridMap, HeightMap, HitSide, TileMap, TileType, WallTexturer, TILE_EMPTY, TILE_WALL,
+    Camera, Color, CornerHeights, FloorTexturer, Framebuffer, GridMap, HeightMap, HitSide,
+    TILE_EMPTY, TILE_WALL, TileMap, TileType, WallTexturer, render_floor_ceiling, render_walls,
 };
 
 const MAP_W: usize = 12;
@@ -80,8 +79,8 @@ impl TerrainHeights {
     }
 }
 
-impl HeightMap for TerrainHeights {
-    fn floor_height(&self, x: i32, y: i32) -> f64 {
+impl TerrainHeights {
+    fn floor_at(&self, x: i32, y: i32) -> f64 {
         if (0..MAP_W as i32).contains(&x) && (0..MAP_H as i32).contains(&y) {
             self.floor_rows[y as usize * MAP_W + x as usize]
         } else {
@@ -89,11 +88,24 @@ impl HeightMap for TerrainHeights {
         }
     }
 
-    fn ceiling_height(&self, x: i32, y: i32) -> f64 {
+    fn ceiling_at(&self, x: i32, y: i32) -> f64 {
         if (0..MAP_W as i32).contains(&x) && (0..MAP_H as i32).contains(&y) {
             self.ceiling_rows[y as usize * MAP_W + x as usize]
         } else {
             1.0
+        }
+    }
+}
+
+impl HeightMap for TerrainHeights {
+    fn cell_heights(&self, x: i32, y: i32) -> CornerHeights {
+        // Step terrain: all four corners inside a cell share the same
+        // per-tile value. Adjacent cells with different heights produce a
+        // visible step in the rendered slope — that's intentional for this
+        // demo. See `examples/slope.rs` for the continuous-slope variant.
+        CornerHeights {
+            floor: [self.floor_at(x, y); 4],
+            ceil: [self.ceiling_at(x, y); 4],
         }
     }
 }
@@ -302,17 +314,19 @@ fn main() -> std::io::Result<()> {
         // stepping onto the raised plateau and sinks into the pit.
         let tile_x = nx.floor() as i32;
         let tile_y = ny.floor() as i32;
-        let floor_h = heights.floor_height(tile_x, tile_y);
+        let floor_h = heights.floor_at(tile_x, tile_y);
         let new_z = floor_h + 0.5;
 
         let new_yaw = cam.angle + dyaw;
-        cam.set_pose_z(nx, ny, new_z, new_yaw);
+        cam.set_pose(nx, ny, new_yaw);
+        cam.set_z(new_z);
 
         fb.clear(Color::default());
         let rays = cam.cast_all_rays(&map, fb_w, 16.0);
-        // Phase 1 limitation: floor/ceiling still use the flat-plane renderer.
-        render_floor_ceiling(&mut fb, &rays, &tex, &cam);
-        render_walls_with_heights(&mut fb, &rays, &tex, &heights, &cam, 16.0);
+        // Both floor/ceiling and walls consult the same `HeightMap` now,
+        // so stepped terrain aligns on the ground plane too.
+        render_floor_ceiling(&mut fb, &rays, &tex, &heights, &cam, 16.0);
+        render_walls(&mut fb, &rays, &tex, &heights, &cam, 16.0);
 
         let yaw_deg = cam.angle.to_degrees().rem_euclid(360.0);
         let status = format!(

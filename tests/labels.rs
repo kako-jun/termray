@@ -1,13 +1,16 @@
 //! Integration tests for the `label` module.
 
 use termray::{
-    project_labels, render_labels, Color, Font8x8, Framebuffer, GlyphRenderer, HitSide, Label,
-    RayHit,
+    Camera, Color, FlatHeightMap, Font8x8, Framebuffer, GlyphRenderer, HitFace, HitSide, Label,
+    RayHit, project_labels, render_labels,
 };
+
+fn test_camera() -> Camera {
+    Camera::new(0.0, 0.0, 0.0, 70f64.to_radians())
+}
 
 #[test]
 fn project_excludes_labels_behind_camera() {
-    let fov = 70f64.to_radians();
     // Camera at origin facing +x (angle 0). A label behind us at (-5, 0) should be culled.
     let labels = vec![Label {
         text: "behind".into(),
@@ -18,7 +21,7 @@ fn project_excludes_labels_behind_camera() {
         background: None,
         max_chars: None,
     }];
-    let projected = project_labels(&labels, 0.0, 0.0, 0.0, fov, 80);
+    let projected = project_labels(&labels, &test_camera(), &FlatHeightMap, 80, 40);
     assert!(projected.is_empty(), "label behind camera should be culled");
 
     // Sanity: a label in front should survive.
@@ -31,14 +34,13 @@ fn project_excludes_labels_behind_camera() {
         background: None,
         max_chars: None,
     }];
-    let projected = project_labels(&front, 0.0, 0.0, 0.0, fov, 80);
+    let projected = project_labels(&front, &test_camera(), &FlatHeightMap, 80, 40);
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].lines, vec!["front".to_string()]);
 }
 
 #[test]
 fn wrap_handles_oversize_word() {
-    let fov = 70f64.to_radians();
     let labels = vec![Label {
         text: "supercalifragilistic".into(),
         x: 3.0,
@@ -48,7 +50,7 @@ fn wrap_handles_oversize_word() {
         background: None,
         max_chars: Some(6),
     }];
-    let p = project_labels(&labels, 0.0, 0.0, 0.0, fov, 80);
+    let p = project_labels(&labels, &test_camera(), &FlatHeightMap, 80, 40);
     assert_eq!(p.len(), 1);
     // "supercalifragilistic" (20 chars) split at 6 -> "superc", "alifra", "gilist", "ic"
     assert_eq!(
@@ -62,7 +64,6 @@ fn wrap_handles_oversize_word() {
 
 #[test]
 fn wrap_empty_text_drops_label() {
-    let fov = 70f64.to_radians();
     let labels = vec![Label {
         text: "".into(),
         x: 3.0,
@@ -72,13 +73,12 @@ fn wrap_empty_text_drops_label() {
         background: None,
         max_chars: Some(8),
     }];
-    let p = project_labels(&labels, 0.0, 0.0, 0.0, fov, 80);
+    let p = project_labels(&labels, &test_camera(), &FlatHeightMap, 80, 40);
     assert!(p.is_empty());
 }
 
 #[test]
 fn wrap_greedy_final_word_just_fits() {
-    let fov = 70f64.to_radians();
     let labels = vec![Label {
         text: "hi there longword".into(),
         x: 3.0,
@@ -88,7 +88,7 @@ fn wrap_greedy_final_word_just_fits() {
         background: None,
         max_chars: Some(8),
     }];
-    let p = project_labels(&labels, 0.0, 0.0, 0.0, fov, 80);
+    let p = project_labels(&labels, &test_camera(), &FlatHeightMap, 80, 40);
     assert_eq!(p.len(), 1);
     assert_eq!(
         p[0].lines,
@@ -209,13 +209,19 @@ fn render_skips_labels_occluded_by_walls() {
 
     let rays: Vec<Option<RayHit>> = (0..w)
         .map(|i| {
+            let side = if i % 2 == 0 {
+                HitSide::Vertical
+            } else {
+                HitSide::Horizontal
+            };
+            let face = match side {
+                HitSide::Vertical => HitFace::West,
+                HitSide::Horizontal => HitFace::North,
+            };
             Some(RayHit {
                 distance: 1.0,
-                side: if i % 2 == 0 {
-                    HitSide::Vertical
-                } else {
-                    HitSide::Horizontal
-                },
+                side,
+                face,
                 map_x: 0,
                 map_y: 0,
                 wall_x: 0.0,
@@ -224,7 +230,6 @@ fn render_skips_labels_occluded_by_walls() {
         })
         .collect();
 
-    let fov = 70f64.to_radians();
     let labels = vec![Label {
         text: "HIDDEN".into(),
         x: 5.0,
@@ -234,7 +239,7 @@ fn render_skips_labels_occluded_by_walls() {
         background: Some(Color::rgb(10, 10, 10)),
         max_chars: None,
     }];
-    let projected = project_labels(&labels, 0.0, 0.0, 0.0, fov, w);
+    let projected = project_labels(&labels, &test_camera(), &FlatHeightMap, w, h);
     assert_eq!(projected.len(), 1);
     assert!(projected[0].distance > 1.0);
 
@@ -263,7 +268,6 @@ fn render_draws_label_when_unobstructed() {
     // No walls in any column.
     let rays: Vec<Option<RayHit>> = (0..w).map(|_| None).collect();
 
-    let fov = 70f64.to_radians();
     let labels = vec![Label {
         text: "HI".into(),
         // Close enough that the projected baseline lands on-screen.
@@ -274,7 +278,7 @@ fn render_draws_label_when_unobstructed() {
         background: None,
         max_chars: None,
     }];
-    let projected = project_labels(&labels, 0.0, 0.0, 0.0, fov, w);
+    let projected = project_labels(&labels, &test_camera(), &FlatHeightMap, w, h);
     assert_eq!(projected.len(), 1);
 
     render_labels(&mut fb, &projected, &rays, &Font8x8, 16.0);
