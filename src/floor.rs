@@ -146,8 +146,12 @@ fn wall_bounds_for(
 
     let Some(hit) = ray else {
         // No wall: floor/ceiling fills the whole column. Use the projection
-        // center so both halves have somewhere to end.
-        return (center_y as usize, center_y as usize, false);
+        // center so both halves have somewhere to end. Clamp before `as usize`
+        // because a large positive pitch can push `center_y` past `fb_height`
+        // (or below zero), and the saturating `as usize` would truncate to
+        // wrong bounds.
+        let c = center_y.clamp(0.0, fb_h_f) as usize;
+        return (c, c, false);
     };
     if hit.tile == TILE_VOID {
         return (0, fb_height, true);
@@ -292,14 +296,20 @@ fn paint_cell_segment(
     // Local (u, v) in [0,1] of the entry/exit points inside this cell.
     let u_at = |d: f64| camera.x + hdir_x * d - cx as f64;
     let v_at = |d: f64| camera.y + hdir_y * d - cy as f64;
-    // Entry/exit sample in exact cell-local coords (tolerate tiny overshoot
-    // due to floating point — `sample_floor` extrapolates linearly).
+    // Entry/exit sample in exact cell-local coords. We intentionally **do
+    // not** clamp here: `CornerHeights::sample_floor` is documented to
+    // extrapolate linearly past the corners, and tiny floating-point
+    // overshoot at cell boundaries must pass through as-is so the shared
+    // edge between two neighbouring cells keeps its continuity (adjacent
+    // cells with matching shared corners produce matching floor samples
+    // whether approached as `u = 1-eps` from the west or `u = 0+eps` from
+    // the east).
     let (u_e, v_e) = (u_at(d_enter), v_at(d_enter));
     let (u_x, v_x) = (u_at(d_exit), v_at(d_exit));
 
     // --- Floor layer ---
-    let fh_e = ch.sample_floor(u_e.clamp(0.0, 1.0), v_e.clamp(0.0, 1.0));
-    let fh_x = ch.sample_floor(u_x.clamp(0.0, 1.0), v_x.clamp(0.0, 1.0));
+    let fh_e = ch.sample_floor(u_e, v_e);
+    let fh_x = ch.sample_floor(u_x, v_x);
     paint_layer(
         fb,
         col,
@@ -322,9 +332,9 @@ fn paint_cell_segment(
         texturer,
     );
 
-    // --- Ceiling layer ---
-    let gh_e = ch.sample_ceil(u_e.clamp(0.0, 1.0), v_e.clamp(0.0, 1.0));
-    let gh_x = ch.sample_ceil(u_x.clamp(0.0, 1.0), v_x.clamp(0.0, 1.0));
+    // --- Ceiling layer --- (same no-clamp reasoning as floor above).
+    let gh_e = ch.sample_ceil(u_e, v_e);
+    let gh_x = ch.sample_ceil(u_x, v_x);
     paint_layer(
         fb,
         col,
@@ -420,11 +430,9 @@ fn paint_layer(
     }
 
     // Further clip to wall bounds and framebuffer extents.
+    // (fb_h_f == fb_height as f64 — a single `.min(fb_h_f)` suffices.)
     let (clip_lo, clip_hi) = match layer {
-        Layer::Floor => (
-            span_lo.max(wall_bottom as f64),
-            span_hi.min(fb_h_f).min(fb_height as f64),
-        ),
+        Layer::Floor => (span_lo.max(wall_bottom as f64), span_hi.min(fb_h_f)),
         Layer::Ceiling => (span_lo.max(0.0), span_hi.min(wall_top as f64)),
     };
     if clip_hi <= clip_lo {
