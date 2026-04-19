@@ -213,6 +213,60 @@ impl HeightMap for ContinuousRamp {
     }
 }
 
+/// Pixel-level seam test for the adjacent-continuity contract.
+///
+/// The `ContinuousRamp` heightmap gives matching values on shared corners of
+/// adjacent cells. If the floor renderer honours that contract, scanning a
+/// row of pixels across a cell boundary should see **no discontinuity** on
+/// that row — i.e. no visible seam. We sample a row in the floor half of a
+/// rendered scene and assert that the per-column luminance changes smoothly
+/// (adjacent-pixel absolute delta ≤ a small threshold).
+#[test]
+fn adjacent_cell_boundary_has_no_seam() {
+    // Render a small scene and inspect a single row in the lower (floor) half.
+    let fb_w: usize = 120;
+    let fb_h: usize = 80;
+    let map = simple_room(8, 8);
+    let cam = Camera::with_z(4.0, 4.0, 0.5, 0.1, 70f64.to_radians());
+    let fb = render_scene(&map, &ContinuousRamp, &cam, fb_w, fb_h);
+
+    // Scan rows strictly below the horizon (y > fb_h / 2) — i.e. the floor.
+    // Find any row that is fully painted (no default-black pixels) so that
+    // we're comparing actual floor-texture luminance across cell-boundary
+    // columns rather than tripping over a column that didn't get painted.
+    let row = (fb_h / 2 + 2..fb_h - 4)
+        .find(|&y| (0..fb_w).all(|x| fb.get_pixel(x, y) != Color::default()))
+        .expect("expected at least one fully-painted floor row");
+
+    // Compute per-column brightness (R + G + B) and check adjacent-column
+    // deltas. A seam would manifest as a jump of many tens of levels at a
+    // single boundary; smooth bilinear sampling + continuous corner values
+    // produces small (<= a handful of levels) deltas end-to-end.
+    let lum: Vec<i32> = (0..fb_w)
+        .map(|x| {
+            let p = fb.get_pixel(x, row);
+            p.r as i32 + p.g as i32 + p.b as i32
+        })
+        .collect();
+
+    // Loose threshold — the floor texturer (Solid) maps `wx/wy` to ramps of
+    // 0..32 per channel, so one cell-boundary step in world space is still a
+    // tiny luminance change. We allow up to 24 per column which is well
+    // above floating-point noise but well below any real seam's jump.
+    let max_delta = lum
+        .windows(2)
+        .map(|w| (w[0] - w[1]).abs())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        max_delta <= 24,
+        "adjacent-column luminance jump {} exceeds seam threshold on row {} \
+         (cell boundaries should be seamless under ContinuousRamp)",
+        max_delta,
+        row,
+    );
+}
+
 #[test]
 fn adjacent_cells_agree_on_shared_corner() {
     let h = ContinuousRamp;
