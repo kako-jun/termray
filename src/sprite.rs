@@ -29,9 +29,11 @@ pub struct SpriteRenderResult {
     /// which coupled vertical sprite size to horizontal FOV and left
     /// sprites taller than they should be on wide / short framebuffers.
     ///
-    /// [`render_sprites`] multiplies this by the per-type `height_scale` to
-    /// produce the actual on-screen sprite height.
-    pub screen_height: i32,
+    /// Kept as `f64` so sub-pixel distance/pitch changes don't alias into
+    /// the pattern-row granularity. [`render_sprites`] multiplies this by
+    /// the per-type `height_scale` and then quantizes to `i32` at the
+    /// pixel-write boundary, mirroring the `screen_y_feet` pipeline.
+    pub screen_height: f64,
     pub distance: f64,
     pub sprite_type: u8,
     /// Screen y (framebuffer pixels, fractional) of the sprite's feet after
@@ -136,8 +138,10 @@ pub fn project_sprites(
 
             // Base vertical height in pixels = focal_y * 2 / distance = fb_h / distance.
             // Vertical scaling is what we want: walls, floors, and sprites all
-            // share the fb_height-based vertical FOV baseline.
-            let base_height = (screen_height as f64 / distance) as i32;
+            // share the fb_height-based vertical FOV baseline. Kept as `f64`
+            // so `render_sprites` can multiply by `height_scale` before any
+            // `as i32` quantization — mirrors the `screen_y_feet` pipeline.
+            let base_height = screen_height as f64 / distance;
 
             Some(SpriteRenderResult {
                 screen_x,
@@ -181,8 +185,11 @@ pub fn render_sprites(
         let color = base_color.darken(brightness);
         let shadow_color = base_color.darken(brightness * 0.5);
 
-        // Scale the generic screen_height by this type's own vertical scale.
-        let sprite_h = (spr.screen_height as f64 * def.height_scale) as i32;
+        // Scale the generic (f64) screen_height by this type's own vertical
+        // scale, then quantize to i32 at the pixel-write boundary. Same
+        // late-quantization pattern as `screen_y_feet` — avoids per-frame
+        // double rounding when distance changes sub-pixel.
+        let sprite_h = (spr.screen_height * def.height_scale) as i32;
         let sprite_w = sprite_h * pat_w as i32 / pat_h.max(1) as i32;
 
         // Anchor the sprite's feet to the pre-projected ground row, then
