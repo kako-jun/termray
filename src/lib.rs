@@ -13,6 +13,11 @@
 //! IDs `3..=255` are user-defined. Your [`WallTexturer`] implementation decides how
 //! they look and your [`TileMap::is_solid`] decides whether they block movement.
 
+// Doc quality gate: keep rustdoc intra-doc links honest across the crate.
+// A broken link is almost always a rename that lost its reference — fail the
+// build rather than shipping rotten docs.
+#![deny(rustdoc::broken_intra_doc_links)]
+
 pub mod camera;
 pub mod floor;
 pub mod framebuffer;
@@ -33,7 +38,7 @@ pub use map::{
 };
 pub use math::{Vec2f, normalize_angle};
 pub use ray::{HitFace, HitSide, RayHit, cast_ray};
-pub use renderer::{WallTexturer, render_walls};
+pub use renderer::{WALL_HEIGHT_SCALE, WallTexturer, render_walls, tile_hash};
 pub use sprite::{
     Sprite, SpriteArt, SpriteDef, SpriteRenderResult, project_sprites, render_sprites,
 };

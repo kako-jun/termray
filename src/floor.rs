@@ -4,9 +4,9 @@
 //!
 //! For every screen column the renderer walks the 2D grid with DDA (matching
 //! [`crate::ray::cast_ray`]), stopping at either the wall hit distance or
-//! [`max_depth`]. For each walked cell it fetches the
-//! [`crate::CornerHeights`] and maps that segment of the ray to screen y
-//! ranges for both floor and ceiling.
+//! the `max_depth` argument of [`render_floor_ceiling`]. For each walked
+//! cell it fetches the [`crate::CornerHeights`] and maps that segment of
+//! the ray to screen y ranges for both floor and ceiling.
 //!
 //! Inside a cell the floor surface is treated as bilinear across the four
 //! corners, and the ray's intersection with that surface is approximated

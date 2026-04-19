@@ -25,7 +25,7 @@ const FOV_CULL_FRACTION: f64 = 0.6;
 /// Minimum distance (world units) at which a label is still rendered. Labels
 /// closer than this are skipped to avoid absurd on-screen magnification right
 /// in front of the camera — matches the sprite near-cut.
-const MIN_LABEL_DISTANCE: f64 = 0.3;
+pub const MIN_LABEL_DISTANCE: f64 = 0.3;
 
 /// Alpha used when blending a label's optional background rectangle into the
 /// framebuffer. Tuned for readability against both light and dark walls.
