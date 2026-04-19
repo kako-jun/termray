@@ -18,6 +18,17 @@
 // build rather than shipping rotten docs.
 #![deny(rustdoc::broken_intra_doc_links)]
 
+/// Minimum world-space distance at which sprites and labels are still
+/// projected. Objects closer than this are dropped from the projection to
+/// avoid absurd on-screen magnification when the camera is (nearly) inside
+/// the object — the projection formulas `focal_y / distance` diverge as
+/// `distance → 0`.
+///
+/// Both [`sprite::project_sprites`] and [`label::project_labels`] consume
+/// this constant so the near-cut is identical for an icon + caption pair
+/// placed at the same `(x, y)`.
+pub const MIN_PROJECTION_DISTANCE: f64 = 0.3;
+
 pub mod camera;
 pub mod floor;
 pub mod framebuffer;

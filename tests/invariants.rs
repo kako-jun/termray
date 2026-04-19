@@ -162,8 +162,9 @@ fn pitch_shifts_whole_image_vertically() {
 
     assert_eq!(level.len(), 1);
     assert_eq!(up.len(), 1);
+    // f64 compare: just direction with a small tolerance.
     assert!(
-        up[0].screen_y_feet > level[0].screen_y_feet,
+        up[0].screen_y_feet > level[0].screen_y_feet + 1e-6,
         "pitch up should move content downward on screen; feet level={} up={}",
         level[0].screen_y_feet,
         up[0].screen_y_feet,
@@ -265,9 +266,10 @@ fn sprite_feet_follow_floor_slope() {
     assert_eq!(flat.len(), 1);
     assert_eq!(slope.len(), 1);
 
-    // On a rising floor the feet move UPWARD on screen (smaller y).
+    // On a rising floor the feet move UPWARD on screen (smaller y). f64
+    // compare with a small tolerance.
     assert!(
-        slope[0].screen_y_feet < flat[0].screen_y_feet,
+        slope[0].screen_y_feet + 1e-6 < flat[0].screen_y_feet,
         "sprite on an east-rising slope should have feet above the flat-floor baseline \
          (flat={}, slope={})",
         flat[0].screen_y_feet,

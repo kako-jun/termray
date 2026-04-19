@@ -22,10 +22,8 @@ use crate::ray::RayHit;
 /// screen edges as the sprites they caption.
 const FOV_CULL_FRACTION: f64 = 0.6;
 
-/// Minimum distance (world units) at which a label is still rendered. Labels
-/// closer than this are skipped to avoid absurd on-screen magnification right
-/// in front of the camera — matches the sprite near-cut.
-pub const MIN_LABEL_DISTANCE: f64 = 0.3;
+// Label near-cut is unified with the sprite near-cut via
+// [`crate::MIN_PROJECTION_DISTANCE`] — see that constant for rationale.
 
 /// Alpha used when blending a label's optional background rectangle into the
 /// framebuffer. Tuned for readability against both light and dark walls.
@@ -125,13 +123,16 @@ pub struct ProjectedLabel {
     pub lines: Vec<String>,
     pub color: Color,
     pub background: Option<Color>,
-    /// Pre-computed screen y (framebuffer pixels) of the baseline the
-    /// renderer draws the first text line against. Projected in
-    /// [`project_labels`] from the source [`Label`]'s `world_height` plus
-    /// the bilinear-sampled floor height under the label anchor, with the
-    /// camera pitch horizon shift applied — matches the sprite projection
-    /// so a label attached to a sprite tracks it on sloped ground.
-    pub screen_y_baseline: i32,
+    /// Pre-computed screen y (framebuffer pixels, fractional) of the
+    /// baseline the renderer draws the first text line against. Projected
+    /// in [`project_labels`] from the source [`Label`]'s `world_height`
+    /// plus the bilinear-sampled floor height under the label anchor,
+    /// with the camera pitch horizon shift applied — matches the sprite
+    /// projection so a label attached to a sprite tracks it on sloped
+    /// ground. Kept as `f64` so sub-pixel pitch transitions don't
+    /// introduce aliasing; quantized to `i32` inside [`render_labels`]
+    /// at glyph-write time.
+    pub screen_y_baseline: f64,
 }
 
 /// Greedy word-wrap on ASCII whitespace. Words longer than `max` are hard-split
@@ -208,8 +209,9 @@ fn hard_split(word: &str, max: usize) -> Vec<String> {
 ///
 /// Labels behind the camera or outside `±FOV_CULL_FRACTION * fov` are culled,
 /// matching the [`crate::sprite::project_sprites`] convention. Labels closer
-/// than [`MIN_LABEL_DISTANCE`] world units are also skipped to avoid absurd
-/// on-screen magnification right in front of the camera.
+/// than [`crate::MIN_PROJECTION_DISTANCE`] world units are also skipped to
+/// avoid absurd on-screen magnification right in front of the camera —
+/// shared with sprites so an icon + caption pair disappears together.
 ///
 /// Results are sorted far-to-near so caller rendering follows the painter's
 /// algorithm — matches [`crate::sprite::project_sprites`].
@@ -243,7 +245,7 @@ pub fn project_labels(
             let dy = lbl.y - camera_y;
             let distance = (dx * dx + dy * dy).sqrt();
 
-            if distance < MIN_LABEL_DISTANCE {
+            if distance < crate::MIN_PROJECTION_DISTANCE {
                 return None;
             }
 
@@ -299,7 +301,7 @@ pub fn project_labels(
                 lines,
                 color: lbl.color,
                 background: lbl.background,
-                screen_y_baseline: baseline_y as i32,
+                screen_y_baseline: baseline_y,
             })
         })
         .collect();
@@ -346,7 +348,9 @@ pub fn render_labels(
 
         // Use the baseline pre-computed in `project_labels` — it already
         // folds in the camera pitch and the sampled floor under the label.
-        let baseline_y = lbl.screen_y_baseline;
+        // Quantize the f64 baseline here at the pixel-write boundary so
+        // pitch transitions don't double-round.
+        let baseline_y = lbl.screen_y_baseline as i32;
 
         for (li, line) in lbl.lines.iter().enumerate() {
             let line_chars: Vec<char> = line.chars().collect();

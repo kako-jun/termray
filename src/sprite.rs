@@ -34,11 +34,14 @@ pub struct SpriteRenderResult {
     pub screen_height: i32,
     pub distance: f64,
     pub sprite_type: u8,
-    /// Screen y (framebuffer pixels) of the sprite's feet after projecting
-    /// it onto the floor surface via [`HeightMap`] bilinear sampling and
-    /// applying the camera pitch horizon shift. Used by [`render_sprites`]
-    /// as the anchor row from which the sprite art is drawn upward.
-    pub screen_y_feet: i32,
+    /// Screen y (framebuffer pixels, fractional) of the sprite's feet after
+    /// projecting it onto the floor surface via [`HeightMap`] bilinear
+    /// sampling and applying the camera pitch horizon shift. Used by
+    /// [`render_sprites`] as the anchor row from which the sprite art is
+    /// drawn upward. Kept as `f64` so sub-pixel pitch transitions don't
+    /// alias; quantized to `i32` inside [`render_sprites`] at pixel-write
+    /// time.
+    pub screen_y_feet: f64,
 }
 
 /// ASCII-art pattern used to render a sprite type.
@@ -73,6 +76,10 @@ pub trait SpriteArt {
 /// horizon shift via the same `center_y = fb_height/2 + tan(pitch) * focal_px`
 /// convention used by walls and the floor renderer — sprites therefore track
 /// pitch without any per-sprite vertical math in the caller.
+///
+/// Sprites closer than [`crate::MIN_PROJECTION_DISTANCE`] are dropped to
+/// avoid absurd magnification near the camera; the same constant gates
+/// [`crate::label::project_labels`].
 pub fn project_sprites(
     sprites: &[Sprite],
     camera: &Camera,
@@ -99,7 +106,7 @@ pub fn project_sprites(
             let dy = s.y - camera_y;
             let distance = (dx * dx + dy * dy).sqrt();
 
-            if distance < 0.3 {
+            if distance < crate::MIN_PROJECTION_DISTANCE {
                 return None;
             }
 
@@ -138,7 +145,7 @@ pub fn project_sprites(
                 screen_height: base_height,
                 distance,
                 sprite_type: s.sprite_type,
-                screen_y_feet: screen_y_feet_f as i32,
+                screen_y_feet: screen_y_feet_f,
             })
         })
         .collect();
@@ -182,9 +189,12 @@ pub fn render_sprites(
 
         // Anchor the sprite's feet to the pre-projected ground row, then
         // grow upward by `sprite_h`. Applies the per-type float offset on
-        // top of the ground anchor so floating sprites still work.
+        // top of the ground anchor so floating sprites still work. Quantize
+        // the f64 feet position here at the pixel-write boundary so sub-pixel
+        // pitch/slope motion doesn't double-round.
+        let feet_i = spr.screen_y_feet as i32;
         let float_offset = (sprite_h as f64 * def.float_offset_scale) as i32;
-        let y_top = spr.screen_y_feet - sprite_h - float_offset;
+        let y_top = feet_i - sprite_h - float_offset;
 
         let x_left = spr.screen_x - sprite_w / 2;
 
