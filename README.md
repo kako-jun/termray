@@ -109,6 +109,22 @@ vy += (fwd.y + right.y) * dt;
 `set_position` and `set_yaw` are the corresponding single-axis setters, for
 cases where only one component changes per update.
 
+### Pitch convention
+
+`Camera::pitch` is a **horizon offset** (Doom / Heretic style), not a 3D
+rotation.
+
+- `pitch > 0` means **looking up**. The horizon slides *down* on screen
+  (the sky takes up more of the view).
+- `pitch < 0` means **looking down**. The horizon slides *up*.
+
+Internally the offset is applied as a single `tan(pitch) * focal_px` pixel
+shift shared by walls, floor / ceiling, sprites, and labels — so pitch only
+ever changes *where* the horizon sits, never how 3D the scene looks. Keep
+`|pitch|` strictly less than `FRAC_PI_2` to avoid the `tan` singularity at
+the poles; values up to about `0.9` are visually useful, past that the
+view fills almost entirely with sky or floor.
+
 ## Heightmaps (v0.3.0 — corner-interpolated slopes)
 
 The `HeightMap` trait exposes one method, `cell_heights(x, y) ->
@@ -240,6 +256,7 @@ interior wall.
 
 | Module | Public items |
 | --- | --- |
+| (crate root) | `MIN_PROJECTION_DISTANCE` (near-cut shared by `project_sprites` / `project_labels`) |
 | `math` | `Vec2f`, `normalize_angle` |
 | `framebuffer` | `Color`, `Framebuffer` |
 | `map` | `TileType`, `TILE_EMPTY`, `TILE_WALL`, `TILE_VOID`, `TileMap`, `GridMap`, `HeightMap`, `FlatHeightMap`, `CornerHeights`, `CORNER_NW`/`NE`/`SW`/`SE` |
@@ -247,8 +264,8 @@ interior wall.
 | `camera` | `Camera` (incl. `with_z`, `set_pose`, `set_position`, `set_yaw`, `set_z`, `set_pitch`, `forward`, `right`) |
 | `renderer` | `WallTexturer`, `render_walls`, `tile_hash`, `WALL_HEIGHT_SCALE` |
 | `floor` | `FloorTexturer`, `render_floor_ceiling` |
-| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult` (with `screen_y_feet`), `project_sprites`, `render_sprites` |
-| `label` | `Label`, `ProjectedLabel`, `GlyphRenderer`, `Font8x8`, `project_labels`, `render_labels` |
+| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult` (with `screen_y_feet: f64`), `project_sprites`, `render_sprites` |
+| `label` | `Label`, `ProjectedLabel` (with `screen_y_baseline: f64`), `GlyphRenderer`, `Font8x8`, `project_labels`, `render_labels` |
 
 ## Relationship to nobiscuit-engine
 
