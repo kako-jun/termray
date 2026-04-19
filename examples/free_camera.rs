@@ -28,8 +28,8 @@ use crossterm::terminal::{
 };
 
 use termray::{
-    Camera, Color, FloorTexturer, Framebuffer, GridMap, HitSide, TILE_EMPTY, TILE_WALL, TileMap,
-    TileType, WallTexturer, render_floor_ceiling, render_walls,
+    Camera, Color, FlatHeightMap, FloorTexturer, Framebuffer, GridMap, HitSide, TILE_EMPTY,
+    TILE_WALL, TileMap, TileType, WallTexturer, render_floor_ceiling, render_walls,
 };
 
 struct SolidTexturer;
@@ -239,8 +239,8 @@ fn main() -> std::io::Result<()> {
 
         fb.clear(Color::default());
         let rays = cam.cast_all_rays(&map, fb_w, 16.0);
-        render_floor_ceiling(&mut fb, &rays, &tex, &cam);
-        render_walls(&mut fb, &rays, &tex, 16.0);
+        render_floor_ceiling(&mut fb, &rays, &tex, &FlatHeightMap, &cam, 16.0);
+        render_walls(&mut fb, &rays, &tex, &FlatHeightMap, &cam, 16.0);
 
         let yaw_deg = cam.angle.to_degrees().rem_euclid(360.0);
         let status = format!(

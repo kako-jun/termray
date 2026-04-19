@@ -1,6 +1,9 @@
+use crate::camera::{Camera, projection_center_y};
 use crate::framebuffer::{Color, Framebuffer};
+use crate::map::HeightMap;
 use crate::math::normalize_angle;
 use crate::ray::RayHit;
+use crate::renderer::{WALL_HEIGHT_SCALE, projection_focal_px};
 
 #[derive(Debug, Clone)]
 pub struct Sprite {
@@ -9,12 +12,24 @@ pub struct Sprite {
     pub sprite_type: u8,
 }
 
+/// Per-sprite screen-space data produced by [`project_sprites`].
+///
+/// `screen_y_feet` is the pre-computed screen y (in framebuffer pixels) of
+/// the sprite's ground-contact point after sampling the floor under it with
+/// bilinear interpolation and accounting for the camera's pitch. It replaces
+/// the fixed "sprite sits at `fb_height / 2`" assumption used in pre-v0.3
+/// termray, so sprites on sloped floors actually stand on the slope.
 #[derive(Debug, Clone)]
 pub struct SpriteRenderResult {
     pub screen_x: i32,
     pub screen_height: i32,
     pub distance: f64,
     pub sprite_type: u8,
+    /// Screen y (framebuffer pixels) of the sprite's feet after projecting
+    /// it onto the floor surface via [`HeightMap`] bilinear sampling and
+    /// applying the camera pitch horizon shift. Used by [`render_sprites`]
+    /// as the anchor row from which the sprite art is drawn upward.
+    pub screen_y_feet: i32,
 }
 
 /// ASCII-art pattern used to render a sprite type.
@@ -42,14 +57,32 @@ pub trait SpriteArt {
 }
 
 /// Project sprites into screen space, sorted far-to-near (painter's algorithm).
+///
+/// The `heights` map is sampled bilinearly at each sprite's `(x, y)` to
+/// determine the world-space elevation of its feet, so sprites sitting on a
+/// slope inherit the slope. `camera.pitch` contributes to the vertical
+/// horizon shift via the same `center_y = fb_height/2 + tan(pitch) * focal_px`
+/// convention used by walls and the floor renderer — sprites therefore track
+/// pitch without any per-sprite vertical math in the caller.
 pub fn project_sprites(
     sprites: &[Sprite],
-    camera_x: f64,
-    camera_y: f64,
-    camera_angle: f64,
-    fov: f64,
+    camera: &Camera,
+    heights: &dyn HeightMap,
     screen_width: usize,
+    screen_height: usize,
 ) -> Vec<SpriteRenderResult> {
+    // Projection anchors: center_y = fb/2 + tan(pitch)*focal_px,
+    // focal_y = fb_height / 2 (matching the floor renderer's vertical-FOV baseline).
+    let center_y = projection_center_y(screen_width, screen_height, camera);
+    let focal_y = screen_height as f64 / 2.0;
+    // Kept around so downstream tweaks (e.g. using a true focal_x projection
+    // for vertical scaling) can switch to it without re-deriving the math.
+    let _focal_x = projection_focal_px(screen_width, camera.fov);
+    let fov = camera.fov;
+    let camera_x = camera.x;
+    let camera_y = camera.y;
+    let camera_angle = camera.angle;
+
     let mut results: Vec<SpriteRenderResult> = sprites
         .iter()
         .filter_map(|s| {
@@ -71,12 +104,27 @@ pub fn project_sprites(
 
             let screen_x = ((angle_diff + fov / 2.0) / fov * screen_width as f64) as i32;
 
+            // Bilinear-sample the floor under the sprite's footprint so it
+            // plants on whatever slope is at (s.x, s.y). `cell_heights`
+            // handles out-of-bounds by returning flat defaults.
+            let cell_x = s.x.floor() as i32;
+            let cell_y = s.y.floor() as i32;
+            let u = s.x - cell_x as f64;
+            let v = s.y - cell_y as f64;
+            let floor_h = heights
+                .cell_heights(cell_x, cell_y)
+                .sample_floor(u.clamp(0.0, 1.0), v.clamp(0.0, 1.0));
+
+            // Project the feet: screen_y = center_y + focal_y * (cam.z - floor_h) / d
+            let screen_y_feet_f = center_y + focal_y * (camera.z - floor_h) / distance;
+
             Some(SpriteRenderResult {
                 screen_x,
                 // screen_height is the base size; `render_sprites` scales by per-type `height_scale`.
                 screen_height: (screen_width as f64 / distance) as i32,
                 distance,
                 sprite_type: s.sprite_type,
+                screen_y_feet: screen_y_feet_f as i32,
             })
         })
         .collect();
@@ -84,6 +132,15 @@ pub fn project_sprites(
     results.sort_by(|a, b| b.distance.total_cmp(&a.distance));
     results
 }
+
+// The `_` prefix on `_focal_x` above silences the lint without dropping the
+// computation — we keep it so the relationship with the walls projection
+// remains documented in code.
+#[allow(dead_code)]
+const _: fn() = || {
+    // Compile-time cross-reference to guard against renamed constants.
+    let _ = WALL_HEIGHT_SCALE;
+};
 
 /// Render projected sprites into the framebuffer using the supplied art source.
 ///
@@ -95,7 +152,7 @@ pub fn render_sprites(
     art: &dyn SpriteArt,
     max_depth: f64,
 ) {
-    let fb_height = fb.height() as f64;
+    let _fb_height = fb.height() as f64;
 
     for spr in projected {
         let Some(def) = art.art(spr.sprite_type) else {
@@ -118,9 +175,11 @@ pub fn render_sprites(
         let sprite_h = (spr.screen_height as f64 * def.height_scale) as i32;
         let sprite_w = sprite_h * pat_w as i32 / pat_h.max(1) as i32;
 
-        let center_y = (fb_height / 2.0) as i32;
+        // Anchor the sprite's feet to the pre-projected ground row, then
+        // grow upward by `sprite_h`. Applies the per-type float offset on
+        // top of the ground anchor so floating sprites still work.
         let float_offset = (sprite_h as f64 * def.float_offset_scale) as i32;
-        let y_top = center_y - sprite_h / 4 - float_offset;
+        let y_top = spr.screen_y_feet - sprite_h - float_offset;
 
         let x_left = spr.screen_x - sprite_w / 2;
 

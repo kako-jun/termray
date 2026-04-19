@@ -28,11 +28,12 @@ pub use floor::{FloorTexturer, render_floor_ceiling};
 pub use framebuffer::{Color, Framebuffer};
 pub use label::{Font8x8, GlyphRenderer, Label, ProjectedLabel, project_labels, render_labels};
 pub use map::{
-    FlatHeightMap, GridMap, HeightMap, TILE_EMPTY, TILE_VOID, TILE_WALL, TileMap, TileType,
+    CORNER_NE, CORNER_NW, CORNER_SE, CORNER_SW, CornerHeights, FlatHeightMap, GridMap, HeightMap,
+    TILE_EMPTY, TILE_VOID, TILE_WALL, TileMap, TileType,
 };
 pub use math::{Vec2f, normalize_angle};
-pub use ray::{HitSide, RayHit, cast_ray};
-pub use renderer::{WallTexturer, render_walls, render_walls_with_heights};
+pub use ray::{HitFace, HitSide, RayHit, cast_ray};
+pub use renderer::{WallTexturer, render_walls};
 pub use sprite::{
     Sprite, SpriteArt, SpriteDef, SpriteRenderResult, project_sprites, render_sprites,
 };

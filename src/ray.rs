@@ -1,19 +1,59 @@
 use crate::map::{TILE_VOID, TileMap};
 use crate::math::Vec2f;
 
-#[derive(Debug, Clone, Copy)]
+/// Which axis a [`RayHit`] crossed when the DDA ended.
+///
+/// Coarser than [`HitFace`]: `Vertical` means the ray ended on an
+/// x-aligned cell boundary (i.e. hit a West or East face), `Horizontal`
+/// means it ended on a y-aligned boundary (North or South face).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HitSide {
     Vertical,
     Horizontal,
+}
+
+/// Which of the four cell faces a [`RayHit`] struck.
+///
+/// Named after the compass direction of the face's normal:
+///
+/// - `West`  — face at `x = map_x`,     normal pointing −x. The ray came from
+///   the west (its `step_x > 0`).
+/// - `East`  — face at `x = map_x + 1`, normal pointing +x. The ray came from
+///   the east (its `step_x < 0`).
+/// - `North` — face at `y = map_y`,     normal pointing −y. The ray came from
+///   the north (its `step_y > 0`).
+/// - `South` — face at `y = map_y + 1`, normal pointing +y. The ray came from
+///   the south (its `step_y < 0`).
+///
+/// The corner-interpolating wall renderer uses this to pick the correct
+/// pair of corner heights from [`crate::CornerHeights`] for the hit face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HitFace {
+    West,
+    East,
+    North,
+    South,
 }
 
 #[derive(Debug, Clone)]
 pub struct RayHit {
     pub distance: f64,
     pub side: HitSide,
+    /// Which of the four cell faces the ray hit. Used by the
+    /// corner-interpolating wall renderer to pick the right edge of the
+    /// cell's [`crate::CornerHeights`]. See [`HitFace`].
+    pub face: HitFace,
     pub map_x: i32,
     pub map_y: i32,
     /// Fractional position along the wall surface (0.0..1.0). For `TILE_VOID`, unspecified (0.0).
+    ///
+    /// The direction of increasing `wall_x` across the face follows the
+    /// face's internal orientation (see [`HitFace`]):
+    ///
+    /// - `West`  face: 0.0 at the **NW** corner, 1.0 at the **SW** corner.
+    /// - `East`  face: 0.0 at the **NE** corner, 1.0 at the **SE** corner.
+    /// - `North` face: 0.0 at the **NW** corner, 1.0 at the **NE** corner.
+    /// - `South` face: 0.0 at the **SW** corner, 1.0 at the **SE** corner.
     pub wall_x: f64,
     pub tile: u8,
 }
@@ -83,10 +123,32 @@ pub fn cast_ray(map: &dyn TileMap, origin: Vec2f, angle: f64, max_depth: f64) ->
                 }
             };
 
+            // Identify which of the four faces of this cell the ray crossed.
+            // Vertical side + east-going ray (step_x > 0) means the ray hit
+            // the cell's West face; same side + west-going ray hits the East
+            // face. Same logic for Horizontal + N/S.
+            let face = match side {
+                HitSide::Vertical => {
+                    if step_x > 0 {
+                        HitFace::West
+                    } else {
+                        HitFace::East
+                    }
+                }
+                HitSide::Horizontal => {
+                    if step_y > 0 {
+                        HitFace::North
+                    } else {
+                        HitFace::South
+                    }
+                }
+            };
+
             if tile == TILE_VOID {
                 return Some(RayHit {
                     distance: perp_dist,
                     side,
+                    face,
                     map_x,
                     map_y,
                     wall_x: 0.0,
@@ -112,6 +174,7 @@ pub fn cast_ray(map: &dyn TileMap, origin: Vec2f, angle: f64, max_depth: f64) ->
             return Some(RayHit {
                 distance: perp_dist,
                 side,
+                face,
                 map_x,
                 map_y,
                 wall_x,
