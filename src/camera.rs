@@ -165,6 +165,20 @@ pub(crate) fn focal_px(fb_width: usize, fov: f64) -> f64 {
 /// shift convention used by all termray renderers.
 ///
 /// Formula: `center_y = fb_height / 2 + tan(pitch) * focal_px(fb_width, fov)`.
+///
+/// # Horizontal vs vertical FOV note
+///
+/// `focal_px = (fb_width / 2) / tan(fov / 2)` is derived from the **horizontal**
+/// FOV, while the floor / sprite / label projections use `focal_y =
+/// fb_height / 2` — i.e. they implicitly assume a **vertical** FOV of ≈ 90°.
+/// The two are independent, so pitch's pixel-shift (`tan(pitch) * focal_px`)
+/// scales with `fb_width`, not `fb_height`. At `fb_width / fb_height = 1`
+/// and `fov = 90°` they agree exactly; for other ratios there is a mild
+/// anisotropy in how pitch tilts the world relative to how height differences
+/// project. This is the same pseudo-pitch approximation Doom / Heretic used;
+/// v0.3 keeps it because the result looks natural for moderate angles and
+/// aspect ratios, and because making it strictly isotropic would require
+/// re-deriving every renderer around a single focal length.
 #[inline]
 pub(crate) fn projection_center_y(fb_width: usize, fb_height: usize, cam: &Camera) -> f64 {
     fb_height as f64 / 2.0 + cam.pitch.tan() * focal_px(fb_width, cam.fov)

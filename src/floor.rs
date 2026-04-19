@@ -33,6 +33,15 @@
 //! `focal_y = fb_height / 2` is baked in — same convention as the
 //! pre-v0.3 implementation.)
 //!
+//! Note that the horizontal focal length used by [`crate::Camera`] for the
+//! pitch horizon shift is computed from the **horizontal** FOV
+//! (`focal_px = (fb_width / 2) / tan(fov / 2)`) and therefore lives on a
+//! different scale than `focal_y`. For `fb_width / fb_height = 1` and
+//! `fov = 90°` the two agree; otherwise pitch tilts the image at a slightly
+//! different rate than height differences project vertically. This is the
+//! same pseudo-pitch approximation used by Doom / Heretic and is kept on
+//! purpose — see [`crate::Camera`]'s type-level docs for the full rationale.
+//!
 //! The two endpoints `d = d_enter` and `d = d_exit` map to `y_enter` and
 //! `y_exit`. The rasterizer fills the screen-y interval between them,
 //! clips to the wall bounds, and for each y inverts the linear `fh(d)`
@@ -47,6 +56,15 @@ use crate::framebuffer::{Color, Framebuffer};
 use crate::map::{HeightMap, TILE_VOID};
 use crate::ray::RayHit;
 use crate::renderer::WALL_HEIGHT_SCALE;
+
+/// Safety cap on cell steps walked by the per-column DDA. Rays nearly
+/// parallel to a world axis can in theory walk a very long chain of cells
+/// before `d_cap` is reached (especially at large `max_depth`), and a
+/// floating-point miscalculation could in principle produce an infinite
+/// loop. 4096 is generous enough that it is never hit in practice (the
+/// caller's `max_depth` usually bounds the walk to a few dozen cells) but
+/// still prevents a pathological runaway.
+const DDA_MAX_STEPS: usize = 4096;
 
 /// Pluggable floor/ceiling texture source.
 ///
@@ -220,8 +238,8 @@ fn walk_column_floor_ceiling(
     let mut safety = 0usize;
     loop {
         safety += 1;
-        if safety > 4096 {
-            break; // pathological loop guard
+        if safety > DDA_MAX_STEPS {
+            break; // pathological loop guard — see `DDA_MAX_STEPS`.
         }
         let d_exit = side_x.min(side_y).min(d_cap);
         if d_exit <= d_enter {
