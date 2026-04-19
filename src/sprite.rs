@@ -3,7 +3,6 @@ use crate::framebuffer::{Color, Framebuffer};
 use crate::map::HeightMap;
 use crate::math::normalize_angle;
 use crate::ray::RayHit;
-use crate::renderer::{WALL_HEIGHT_SCALE, projection_focal_px};
 
 #[derive(Debug, Clone)]
 pub struct Sprite {
@@ -22,6 +21,16 @@ pub struct Sprite {
 #[derive(Debug, Clone)]
 pub struct SpriteRenderResult {
     pub screen_x: i32,
+    /// Base sprite height in framebuffer pixels, computed from the vertical
+    /// projection (`fb_height / distance` via `focal_y = fb_height / 2`).
+    ///
+    /// v0.3 aligns sprite vertical scaling with the floor renderer's
+    /// vertical FOV baseline. Previously this was `screen_width / distance`,
+    /// which coupled vertical sprite size to horizontal FOV and left
+    /// sprites taller than they should be on wide / short framebuffers.
+    ///
+    /// [`render_sprites`] multiplies this by the per-type `height_scale` to
+    /// produce the actual on-screen sprite height.
     pub screen_height: i32,
     pub distance: f64,
     pub sprite_type: u8,
@@ -72,12 +81,12 @@ pub fn project_sprites(
     screen_height: usize,
 ) -> Vec<SpriteRenderResult> {
     // Projection anchors: center_y = fb/2 + tan(pitch)*focal_px,
-    // focal_y = fb_height / 2 (matching the floor renderer's vertical-FOV baseline).
+    // focal_y = fb_height / 2 (matching the floor renderer's vertical-FOV
+    // baseline). Sprite vertical scale therefore shares the same convention
+    // as walls / floor — pre-v0.3 sprite.rs accidentally used `screen_width`
+    // here, which coupled vertical sprite size to horizontal FOV.
     let center_y = projection_center_y(screen_width, screen_height, camera);
     let focal_y = screen_height as f64 / 2.0;
-    // Kept around so downstream tweaks (e.g. using a true focal_x projection
-    // for vertical scaling) can switch to it without re-deriving the math.
-    let _focal_x = projection_focal_px(screen_width, camera.fov);
     let fov = camera.fov;
     let camera_x = camera.x;
     let camera_y = camera.y;
@@ -118,10 +127,15 @@ pub fn project_sprites(
             // Project the feet: screen_y = center_y + focal_y * (cam.z - floor_h) / d
             let screen_y_feet_f = center_y + focal_y * (camera.z - floor_h) / distance;
 
+            // Base vertical height in pixels = focal_y * 2 / distance = fb_h / distance.
+            // Vertical scaling is what we want: walls, floors, and sprites all
+            // share the fb_height-based vertical FOV baseline.
+            let base_height = (screen_height as f64 / distance) as i32;
+
             Some(SpriteRenderResult {
                 screen_x,
                 // screen_height is the base size; `render_sprites` scales by per-type `height_scale`.
-                screen_height: (screen_width as f64 / distance) as i32,
+                screen_height: base_height,
                 distance,
                 sprite_type: s.sprite_type,
                 screen_y_feet: screen_y_feet_f as i32,
@@ -132,15 +146,6 @@ pub fn project_sprites(
     results.sort_by(|a, b| b.distance.total_cmp(&a.distance));
     results
 }
-
-// The `_` prefix on `_focal_x` above silences the lint without dropping the
-// computation — we keep it so the relationship with the walls projection
-// remains documented in code.
-#[allow(dead_code)]
-const _: fn() = || {
-    // Compile-time cross-reference to guard against renamed constants.
-    let _ = WALL_HEIGHT_SCALE;
-};
 
 /// Render projected sprites into the framebuffer using the supplied art source.
 ///

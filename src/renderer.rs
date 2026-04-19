@@ -1,4 +1,4 @@
-use crate::camera::{Camera, focal_px, projection_center_y};
+use crate::camera::{Camera, projection_center_y};
 use crate::framebuffer::{Color, Framebuffer};
 use crate::map::{CORNER_NE, CORNER_NW, CORNER_SE, CORNER_SW, HeightMap, TILE_VOID, TileType};
 use crate::ray::{HitFace, HitSide, RayHit};
@@ -161,13 +161,6 @@ pub fn render_walls(
             fb.set_pixel(col, y, color);
         }
     }
-}
-
-/// Expose the focal-length helper for sibling renderers (floor/ceiling,
-/// sprite, label) without making it public API.
-#[inline]
-pub(crate) fn projection_focal_px(fb_width: usize, fov: f64) -> f64 {
-    focal_px(fb_width, fov)
 }
 
 #[cfg(test)]
