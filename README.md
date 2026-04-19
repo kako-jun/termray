@@ -264,7 +264,7 @@ interior wall.
 | `camera` | `Camera` (incl. `with_z`, `set_pose`, `set_position`, `set_yaw`, `set_z`, `set_pitch`, `forward`, `right`) |
 | `renderer` | `WallTexturer`, `render_walls`, `tile_hash`, `WALL_HEIGHT_SCALE` |
 | `floor` | `FloorTexturer`, `render_floor_ceiling` |
-| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult` (with `screen_y_feet: f64`), `project_sprites`, `render_sprites` |
+| `sprite` | `Sprite`, `SpriteDef`, `SpriteArt`, `SpriteRenderResult` (with `screen_y_feet: f64` and `screen_height: f64`, both quantized to `i32` at the `render_sprites` pixel-write boundary), `project_sprites`, `render_sprites` |
 | `label` | `Label`, `ProjectedLabel` (with `screen_y_baseline: f64`), `GlyphRenderer`, `Font8x8`, `project_labels`, `render_labels` |
 
 ## Relationship to nobiscuit-engine

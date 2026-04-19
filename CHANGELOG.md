@@ -27,7 +27,17 @@ their wall / floor / sprite / label call sites.
 - `SpriteRenderResult::screen_y_feet` — pre-projected ground-contact row
   computed by `project_sprites` from the bilinear-sampled floor under
   the sprite and the camera pitch. Makes sprites stand on sloped floors
-  instead of always anchoring to `fb_h / 2` (#8).
+  instead of always anchoring to `fb_h / 2`. Stored as `f64` and
+  quantized to `i32` at the `render_sprites` pixel-write boundary so
+  sub-pixel pitch / slope motion doesn't alias into row-granularity
+  jitter (#8).
+- `SpriteRenderResult::screen_height` is now `f64` (was `i32` in earlier
+  #8 rounds). `project_sprites` emits `fb_height / distance` without
+  early quantization; `render_sprites` multiplies by the per-type
+  `height_scale` and casts to `i32` at the pixel-write boundary. Matches
+  the `screen_y_feet` / `screen_y_baseline` late-quantization pipeline
+  so distance changes of under one pixel don't step the pattern row
+  count (#8).
 - `examples/slope` — continuous-slope demo with a smooth hill and a
   bowl valley, plus `r` / `f` pitch controls (#8).
 - `tests/invariants.rs` — integration tests covering the five v0.3.0
@@ -64,7 +74,8 @@ their wall / floor / sprite / label call sites.
   `screen_height`. Both bilinear-sample the floor under each anchor, and
   both participate in the pitch horizon shift via the shared
   `projection_center_y`. `ProjectedLabel::world_height` is replaced by
-  `ProjectedLabel::screen_y_baseline` (pre-projected, pitch-aware).
+  `ProjectedLabel::screen_y_baseline` (pre-projected, pitch-aware,
+  stored as `f64` and quantized to `i32` inside `render_labels`).
 - `Camera::set_pose_z` is removed. Use `set_pose` followed by `set_z`.
 
 ### Removed
